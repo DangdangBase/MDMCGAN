@@ -11,7 +11,7 @@ import torch.autograd as autograd
 
 import torchvision.transforms as transforms
 from torchvision.utils import save_image
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, TensorDataset
 from torchvision import datasets
 
 from models import Generator, Discriminator
@@ -67,8 +67,8 @@ parser.add_argument(
 parser.add_argument(
     "--dataset",
     type=str,
-    choices=["mnist", "fashion"],
-    default="mnist",
+    choices=["mnist", "fashion", "mnist_c"],
+    default="mnist_c",
     help="dataset to use",
 )
 opt = parser.parse_args()
@@ -91,7 +91,38 @@ if cuda:
     discriminator.cuda()
 
 # Configure data loader
-if opt.dataset == "mnist":
+
+if opt.dataset == 'mnist_c':
+    mnist_corrupted_folder = './data/mnist_c'
+    arr = ['brightness', 'canny_edges', 'glass_blur', 'identity', 'scale']
+    
+    # Create a list to store the dataloaders
+    dataloader = []
+    
+    for idx, modal in enumerate(arr, start=1):
+        # Load data for the current corruption type
+        imgs = torch.from_numpy(np.load(f"{mnist_corrupted_folder}/{modal}/train_images.npy")).permute(0, 3, 1, 2)
+        labels = torch.from_numpy(np.load(f"{mnist_corrupted_folder}/{modal}/train_labels.npy"))
+        # Append numeric modality information to the dataset
+        modal = torch.tensor([idx] * len(imgs))
+        
+        # Create a TensorDataset with numeric modality information
+        
+        current_dataset = TensorDataset(imgs, labels, modal)
+        
+        # Create a DataLoader for the current corruption type
+        current_dataloader = DataLoader(
+            dataset=current_dataset,
+            batch_size=opt.batch_size,
+            shuffle=True
+        )
+        
+        # Append the DataLoader to the list
+        dataloader.append(current_dataloader)
+
+    # Now, dataloaders is a list containing dataloaders for each corruption type, including numeric modality information
+
+elif opt.dataset == "mnist":
     os.makedirs("data/mnist", exist_ok=True)
     dataloader = torch.utils.data.DataLoader(
         datasets.MNIST(
@@ -109,7 +140,7 @@ if opt.dataset == "mnist":
         batch_size=opt.batch_size,
         shuffle=True,
     )
-else:
+elif opt.dataset == "fashion":
     os.makedirs("data/fashion-mnist", exist_ok=True)
     dataloader = torch.utils.data.DataLoader(
         datasets.FashionMNIST(
@@ -190,75 +221,76 @@ def compute_gradient_penalty(D, real_samples, fake_samples, labels):
 
 batches_done = 0
 for epoch in range(opt.n_epochs):
-    for i, (imgs, labels) in enumerate(dataloader):
-        batch_size = imgs.shape[0]
+    for j in range(5):
+        for i, (imgs, labels, modal) in enumerate(dataloader[j]):
+            batch_size = imgs.shape[0]
 
-        # Move to GPU if necessary
-        real_imgs = imgs.type(Tensor)
-        labels = labels.type(LongTensor)
+            # Move to GPU if necessary
+            real_imgs = imgs.type(Tensor)
+            labels = labels.type(LongTensor)
 
-        # ---------------------
-        #  Train Discriminator
-        # ---------------------
+            # ---------------------
+            #  Train Discriminator
+            # ---------------------
 
-        optimizer_D.zero_grad()
+            optimizer_D.zero_grad()
 
-        # Sample noise and labels as generator input
-        z = Tensor(np.random.normal(0, 1, (imgs.shape[0], opt.latent_dim)))
-
-        # Generate a batch of images
-        fake_imgs = generator(z, labels)
-
-        # Real images
-        real_validity = discriminator(real_imgs, labels)
-        # Fake images
-        fake_validity = discriminator(fake_imgs, labels)
-        # Gradient penalty
-        gradient_penalty = compute_gradient_penalty(
-            discriminator, real_imgs.data, fake_imgs.data, labels.data
-        )
-        # Adversarial loss
-        d_loss = (
-            -torch.mean(real_validity)
-            + torch.mean(fake_validity)
-            + lambda_gp * gradient_penalty
-        )
-
-        d_loss.backward()
-        optimizer_D.step()
-
-        optimizer_G.zero_grad()
-
-        # Train the generator every n_critic steps
-        if i % opt.n_critic == 0:
-            # -----------------
-            #  Train Generator
-            # -----------------
+            # Sample noise and labels as generator input
+            z = Tensor(np.random.normal(0, 1, (imgs.shape[0], opt.latent_dim)))
 
             # Generate a batch of images
             fake_imgs = generator(z, labels)
-            # Loss measures generator's ability to fool the discriminator
-            # Train on fake images
+
+            # Real images
+            real_validity = discriminator(real_imgs, labels)
+            # Fake images
             fake_validity = discriminator(fake_imgs, labels)
-            g_loss = -torch.mean(fake_validity)
-
-            g_loss.backward()
-            optimizer_G.step()
-
-            print(
-                "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]"
-                % (
-                    epoch,
-                    opt.n_epochs,
-                    i,
-                    len(dataloader),
-                    d_loss.item(),
-                    g_loss.item(),
-                )
+            # Gradient penalty
+            gradient_penalty = compute_gradient_penalty(
+                discriminator, real_imgs.data, fake_imgs.data, labels.data
+            )
+            # Adversarial loss
+            d_loss = (
+                -torch.mean(real_validity)
+                + torch.mean(fake_validity)
+                + lambda_gp * gradient_penalty
             )
 
-            if batches_done % opt.sample_interval == 0:
-                sample_image(opt.n_classes, batches_done)
-                # save_image(fake_imgs.data[:25], "images/%d.png" % batches_done, nrow=5, normalize=True)
+            d_loss.backward()
+            optimizer_D.step()
 
-            batches_done += opt.n_critic
+            optimizer_G.zero_grad()
+
+            # Train the generator every n_critic steps
+            if i % opt.n_critic == 0:
+                # -----------------
+                #  Train Generator
+                # -----------------
+
+                # Generate a batch of images
+                fake_imgs = generator(z, labels)
+                # Loss measures generator's ability to fool the discriminator
+                # Train on fake images
+                fake_validity = discriminator(fake_imgs, labels)
+                g_loss = -torch.mean(fake_validity)
+
+                g_loss.backward()
+                optimizer_G.step()
+
+                print(
+                    "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]"
+                    % (
+                        epoch,
+                        opt.n_epochs,
+                        i,
+                        len(dataloader[j]),
+                        d_loss.item(),
+                        g_loss.item(),
+                    )
+                )
+
+                if batches_done % opt.sample_interval == 0:
+                    sample_image(opt.n_classes, batches_done)
+                    # save_image(fake_imgs.data[:25], "images/%d.png" % batches_done, nrow=5, normalize=True)
+
+                batches_done += opt.n_critic
