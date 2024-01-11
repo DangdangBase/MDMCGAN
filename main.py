@@ -90,26 +90,16 @@ lambda_gp = 10
 
 # Initialize generator and discriminator
 generator = Generator(opt)
-discriminator_1 = Discriminator(opt)
-discriminator_2 = Discriminator(opt)
-discriminator_3 = Discriminator(opt)
-discriminator_4 = Discriminator(opt)
-discriminator_5 = Discriminator(opt)
-discriminators = [
-    discriminator_1,
-    discriminator_2,
-    discriminator_3,
-    discriminator_4,
-    discriminator_5,
-]
+
+discriminators = []
+for _ in range(opt.num_modalities):
+    D = Discriminator(opt)
+    discriminators.append(D)
 
 if cuda:
     generator.cuda()
-    discriminator_1.cuda()
-    discriminator_2.cuda()
-    discriminator_3.cuda()
-    discriminator_4.cuda()
-    discriminator_5.cuda()
+    for D in discriminators:
+        D.cuda()
 
 # Configure data loader
 
@@ -189,37 +179,31 @@ elif opt.dataset == "fashion":
 optimizer_G = torch.optim.Adam(
     generator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
 )
-optimizer_D_1 = torch.optim.Adam(
-    discriminator_1.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
-)
-optimizer_D_2 = torch.optim.Adam(
-    discriminator_2.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
-)
-optimizer_D_3 = torch.optim.Adam(
-    discriminator_3.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
-)
-optimizer_D_4 = torch.optim.Adam(
-    discriminator_4.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
-)
-optimizer_D_5 = torch.optim.Adam(
-    discriminator_5.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
-)
-optimizers = [optimizer_D_1, optimizer_D_2, optimizer_D_3, optimizer_D_4, optimizer_D_5]
+
+optimizers_D = []
+for D in discriminators:
+    O = torch.optim.Adam(D.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2))
+    optimizers_D.append(O)
+
+
 Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if cuda else torch.LongTensor
 
 
-def sample_image(n_row, batches_done, n):
+def sample_image(n_row, batches_done):
     """Saves a grid of generated digits ranging from 0 to n_classes"""
     # Sample noise
-    z = Tensor(np.random.normal(0, 1, (n_row**2, opt.latent_dim)))
+    z = Tensor(np.random.normal(0, 1, (n_row * opt.num_modalities, opt.latent_dim)))
     # Get labels ranging from 0 to n_classes for n rows
-    labels = np.array([num for _ in range(n_row) for num in range(n_row)])
+    labels = torch.tensor(
+        [num for _ in range(opt.num_modalities) for num in range(n_row)]
+    )
+    modal = torch.tensor([[idx] * n_row for idx in range(5)]).flatten()
+
     with torch.no_grad():
-        labels = LongTensor(labels)
-        gen_imgs = generator(z, labels)
+        gen_imgs = generator(z, labels, modal)
     save_image(
-        gen_imgs[n].data, "images/%d.png" % batches_done, nrow=n_row, normalize=True
+        gen_imgs.data, "images/%d.png" % batches_done, nrow=n_row, normalize=True
     )
 
 
@@ -271,33 +255,38 @@ for epoch in range(opt.n_epochs):
             #  Train Discriminator
             # ---------------------
 
-            optimizers[j].zero_grad()
+            optimizers_D[j].zero_grad()
 
             # Sample noise and labels as generator input
             z = Tensor(np.random.normal(0, 1, (imgs.shape[0], opt.latent_dim)))
 
             # Generate a batch of images
-            fake_imgs = generator(z, labels)
+            fake_imgs = generator(z, labels, modal)
 
             # Real images
             real_validity = discriminators[j](real_imgs, labels, modal)
 
-            fake_labels = torch.randint(0, 10, size=(labels.size(0),), device='cuda:0')
-            fake_labels = torch.where(fake_labels == labels, torch.randint_like(fake_labels, 0, 10), fake_labels)
+            fake_labels = torch.randint(0, 10, size=(labels.size(0),), device="cuda:0")
+            fake_labels = torch.where(
+                fake_labels == labels,
+                torch.randint_like(fake_labels, 0, 10),
+                fake_labels,
+            )
             fake_label = discriminators[j](real_imgs, fake_labels, modal)
 
-            fake_modals = torch.randint(0, 5, size=(modal.size(0),), device='cuda:0')
-            fake_modals = torch.where(fake_modals == modal, torch.randint_like(fake_modals, 0, 5), fake_modals)
+            fake_modals = torch.randint(0, 5, size=(modal.size(0),), device="cuda:0")
+            fake_modals = torch.where(
+                fake_modals == modal, torch.randint_like(fake_modals, 0, 5), fake_modals
+            )
             fake_modality = discriminators[j](real_imgs, labels, fake_modals)
-            
-            # Fake images
-            fake_validity = discriminators[j](fake_imgs[j], labels, modal)
 
+            # Fake images
+            fake_validity = discriminators[j](fake_imgs, labels, modal)
             # Gradient penalty
             gradient_penalty = compute_gradient_penalty(
                 discriminators[j],
                 real_imgs.data,
-                fake_imgs[j].data,
+                fake_imgs.data,
                 labels.data,
                 modal.data,
             )
@@ -307,16 +296,16 @@ for epoch in range(opt.n_epochs):
                 + torch.mean(fake_validity)
                 + lambda_gp * gradient_penalty
             )
-            
+
             d_dis_loss = (
                 torch.mean((real_validity - 1) ** 2)
-                + torch.mean(fake_label ** 2)
-                + torch.mean(fake_modality ** 2)
-                + torch.mean(fake_validity ** 2)
+                + torch.mean(fake_label**2)
+                + torch.mean(fake_modality**2)
+                + torch.mean(fake_validity**2)
             )
 
             d_loss.backward()
-            optimizers[j].step()
+            optimizers_D[j].step()
 
             optimizer_G.zero_grad()
 
@@ -327,10 +316,10 @@ for epoch in range(opt.n_epochs):
                 # -----------------
 
                 # Generate a batch of images
-                fake_imgs = generator(z, labels)
+                fake_imgs = generator(z, labels, modal)
                 # Loss measures generator's ability to fool the discriminator
                 # Train on fake images
-                fake_validity = discriminators[j](fake_imgs[j], labels, modal)
+                fake_validity = discriminators[j](fake_imgs, labels, modal)
                 g_loss = -torch.mean(fake_validity)
 
                 g_loss.backward()
@@ -351,7 +340,7 @@ for epoch in range(opt.n_epochs):
                 )
 
                 if batches_done % opt.sample_interval == 0:
-                    sample_image(opt.n_classes, batches_done, j)
+                    sample_image(opt.n_classes, batches_done)
                     # save_image(fake_imgs.data[:25], "images/%d.png" % batches_done, nrow=5, normalize=True)
 
                 batches_done += opt.n_critic

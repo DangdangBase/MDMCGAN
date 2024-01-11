@@ -11,7 +11,8 @@ class Generator(nn.Module):
         self.num_modalities = opt.num_modalities
 
         self.label_emb = nn.Embedding(opt.n_classes, opt.n_classes)
- 
+        self.modal_emb = nn.Embedding(opt.num_modalities, opt.num_modalities)
+
         def block(in_feat, out_feat, normalize=True):
             layers = [nn.Linear(in_feat, out_feat)]
             if normalize:
@@ -19,37 +20,40 @@ class Generator(nn.Module):
             layers.append(nn.LeakyReLU(0.2, inplace=True))
             return layers
 
-        self.models = nn.ModuleList()
-        for _ in range(self.num_modalities):
-            model = nn.Sequential(
-                *block(opt.latent_dim + opt.n_classes, 128, normalize=False),
-                *block(128, 256),
-                *block(256, 512),
-                *block(512, 1024),
-                nn.Linear(1024, int(np.prod(opt.img_shape))),
-                nn.Tanh()
-            )
-            self.models.append(model)
+        self.model = nn.Sequential(
+            *block(
+                opt.latent_dim + opt.n_classes + opt.num_modalities,
+                128,
+                normalize=False,
+            ),
+            *block(128, 256),
+            *block(256, 512),
+            *block(512, 1024),
+            nn.Linear(1024, int(np.prod(opt.img_shape))),
+            nn.Tanh()
+        )
 
-    def forward(self, z, labels):
-        generated_modalities = []
-        for cur_model in self.models:
-            gen_input = torch.cat((self.label_emb(labels), z), -1)
-            img = cur_model(gen_input)
-            img = img.view(img.shape[0], *self.opt.img_shape)
-            generated_modalities.append(img)
-        return generated_modalities
+    def forward(self, z, labels, modal):
+        emb = torch.cat((self.label_emb(labels), self.modal_emb(modal)), -1)
+        gen_input = torch.cat((emb, z), -1)
+
+        img = self.model(gen_input)
+        img = img.view(img.shape[0], *self.opt.img_shape)
+        return img
 
 
 class Discriminator(nn.Module):
     def __init__(self, opt):
         super(Discriminator, self).__init__()
 
-        self.label_embedding = nn.Embedding(opt.n_classes, opt.n_classes)
+        self.label_emb = nn.Embedding(opt.n_classes, opt.n_classes)
+        self.modal_emb = nn.Embedding(opt.num_modalities, opt.num_modalities)
 
         # Copied from cgan.py
         self.model = nn.Sequential(
-            nn.Linear(opt.n_classes + int(np.prod(opt.img_shape)), 512),
+            nn.Linear(
+                opt.n_classes + opt.num_modalities + int(np.prod(opt.img_shape)), 512
+            ),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Linear(512, 512),
             nn.Dropout(0.4),
@@ -59,6 +63,8 @@ class Discriminator(nn.Module):
 
     def forward(self, img, labels, modal):
         # Concatenate label embedding and image to produce input
-        d_in = torch.cat((img.view(img.size(0), -1), self.label_embedding(labels)), -1)
+        emb = torch.cat((self.label_emb(labels), self.modal_emb(modal)), -1)
+        d_in = torch.cat((img.view(img.size(0), -1), emb), -1)
+
         validity = self.model(d_in)
         return validity
