@@ -281,8 +281,18 @@ for epoch in range(opt.n_epochs):
 
             # Real images
             real_validity = discriminators[j](real_imgs, labels, modal)
+
+            fake_labels = torch.randint(0, 10, size=(labels.size(0),), device='cuda:0')
+            fake_labels = torch.where(fake_labels == labels, torch.randint_like(fake_labels, 0, 10), fake_labels)
+            fake_label = discriminators[j](real_imgs, fake_labels, modal)
+
+            fake_modals = torch.randint(0, 5, size=(modal.size(0),), device='cuda:0')
+            fake_modals = torch.where(fake_modals == modal, torch.randint_like(fake_modals, 0, 5), fake_modals)
+            fake_modality = discriminators[j](real_imgs, labels, fake_modals)
+            
             # Fake images
             fake_validity = discriminators[j](fake_imgs[j], labels, modal)
+
             # Gradient penalty
             gradient_penalty = compute_gradient_penalty(
                 discriminators[j],
@@ -296,6 +306,13 @@ for epoch in range(opt.n_epochs):
                 -torch.mean(real_validity)
                 + torch.mean(fake_validity)
                 + lambda_gp * gradient_penalty
+            )
+            
+            d_dis_loss = (
+                torch.mean((real_validity - 1) ** 2)
+                + torch.mean(fake_label ** 2)
+                + torch.mean(fake_modality ** 2)
+                + torch.mean(fake_validity ** 2)
             )
 
             d_loss.backward()
