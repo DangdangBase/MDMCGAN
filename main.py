@@ -126,7 +126,7 @@ if opt.dataset == "mnist_c":
         modal = torch.tensor([idx] * len(imgs))
 
         # Create a TensorDataset with numeric modality information
-        imgs = imgs/255.0
+        imgs = imgs / 255.0
         current_dataset = TensorDataset(imgs, labels, modal)
 
         # Create a DataLoader for the current corruption type
@@ -195,21 +195,25 @@ LongTensor = torch.cuda.LongTensor if cuda else torch.LongTensor
 def sample_image(n_row, batches_done):
     """Saves a grid of generated digits ranging from 0 to n_classes"""
     # Sample noise
-    z = Tensor(np.random.normal(0, 1, (n_row * opt.num_modalities, opt.latent_dim))).to(device)
+    z = Tensor(np.random.normal(0, 1, (n_row * opt.num_modalities, opt.latent_dim))).to(
+        device
+    )
     # Get labels ranging from 0 to n_classes for n rows
-    labels = torch.tensor([num for _ in range(opt.num_modalities) for num in range(n_row)]).to(device)
-    modal = torch.tensor([[idx] * n_row for idx in range(opt.num_modalities)]).flatten().to(device)
+    labels = torch.tensor(
+        [num for _ in range(opt.num_modalities) for num in range(n_row)]
+    ).to(device)
+    modal = (
+        torch.tensor([[idx] * n_row for idx in range(opt.num_modalities)])
+        .flatten()
+        .to(device)
+    )
 
     with torch.no_grad():
         gen_imgs = generator(z, labels, modal)
 
     save_image(
-        gen_imgs.data,
-        "images/%d.png" % batches_done,
-        nrow=n_row,
-        normalize=True
+        gen_imgs.data, "images/%d.png" % batches_done, nrow=n_row, normalize=True
     )
-
 
 
 def compute_gradient_penalty(D, real_samples, fake_samples, labels, modal):
@@ -246,6 +250,8 @@ def compute_gradient_penalty(D, real_samples, fake_samples, labels, modal):
 # ----------
 
 batches_done = 0
+g_losses = [None for _ in range(opt.num_modalities)]
+
 for epoch in range(opt.n_epochs):
     it_list = []
     for dl in dataloader:
@@ -254,7 +260,9 @@ for epoch in range(opt.n_epochs):
     data_len = len(dataloader[0])
 
     for i in range(data_len):
-        for j in range(5):
+        is_critic = i % opt.n_critic == 0
+
+        for j in range(opt.num_modalities):
             (imgs, labels, modal) = next(it_list[j])
             batch_size = imgs.shape[0]
 
@@ -317,24 +325,34 @@ for epoch in range(opt.n_epochs):
                 + lambda_gp * gradient_penalty
             )
 
-            
             d_dis_loss.backward()
             optimizers_D[j].step()
 
+            if is_critic:
+                # -----------------
+                # Collect Generator loss
+                # -----------------
 
-            optimizer_G.zero_grad()
+                # Generate a batch of images
+                fake_imgs = generator(z, labels, modal)
+                # Loss measures generator's ability to fool the discriminator
+                # Train on fake images
+                fake_validity = discriminators[j](fake_imgs, labels, modal)
+                g_losses[j] = -torch.mean(fake_validity)
 
-        if i % opt.n_critic == 0:
+        if is_critic:
             # -----------------
             #  Train Generator
             # -----------------
 
-            # Generate a batch of images
-            fake_imgs = generator(z, labels, modal)
-            # Loss measures generator's ability to fool the discriminator
-            # Train on fake images
-            fake_validity = discriminators[j](fake_imgs, labels, modal)
-            g_loss = -torch.mean(fake_validity)
+            optimizer_G.zero_grad()
+
+            exp_losses = [torch.exp(loss) for loss in g_losses]
+            exp_loss_sum = sum(exp_losses)
+
+            g_loss = 0
+            for k in range(opt.num_modalities):
+                g_loss += exp_losses[k] * g_losses[k] / exp_loss_sum
 
             g_loss.backward()
             optimizer_G.step()
