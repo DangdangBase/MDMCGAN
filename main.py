@@ -128,6 +128,7 @@ if opt.dataset == "mnist_c":
         # Create a TensorDataset with numeric modality information
         imgs = imgs / 255.0
         current_dataset = TensorDataset(imgs, labels, modal)
+        data_size = torch.flatten(imgs[0]).size(0)
 
         # Create a DataLoader for the current corruption type
         current_dataloader = DataLoader(
@@ -207,11 +208,16 @@ def compute_gradient_penalty(D, real_samples, fake_samples, labels, modal):
     return gradient_penalty
 
 
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
 # ----------
 #  Training
 # ----------
 
 batches_done = 0
+workload = 0
 g_losses = [None for _ in range(opt.num_modalities)]
 
 for epoch in range(opt.n_epochs):
@@ -314,8 +320,17 @@ for epoch in range(opt.n_epochs):
             g_loss.backward()
             optimizer_G.step()
 
+            # -----------------
+            # Energy consumption
+            # -----------------
+
+            k = 1
+            workload += opt.batch_size * (
+                data_size * opt.num_modalities + k * count_parameters(generator)
+            )
+
             print(
-                "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]"
+                "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f] [G workload: %d]"
                 % (
                     epoch,
                     opt.n_epochs,
@@ -323,6 +338,7 @@ for epoch in range(opt.n_epochs):
                     data_len,
                     d_dis_loss.item(),
                     g_loss.item(),
+                    workload,
                 )
             )
 
