@@ -139,44 +139,6 @@ if opt.dataset == "mnist_c":
 
     # Now, dataloaders is a list containing dataloaders for each corruption type, including numeric modality information
 
-elif opt.dataset == "mnist":
-    os.makedirs("data/mnist", exist_ok=True)
-    dataloader = torch.utils.data.DataLoader(
-        datasets.MNIST(
-            "data/mnist",
-            train=True,
-            download=True,
-            transform=transforms.Compose(
-                [
-                    transforms.Resize(opt.img_size),
-                    transforms.ToTensor(),
-                    transforms.Normalize([0.5], [0.5]),
-                ]
-            ),
-        ),
-        batch_size=opt.batch_size,
-        shuffle=True,
-    )
-elif opt.dataset == "fashion":
-    os.makedirs("data/fashion-mnist", exist_ok=True)
-    dataloader = torch.utils.data.DataLoader(
-        datasets.FashionMNIST(
-            "data/fashion-mnist",
-            train=True,
-            download=True,
-            transform=transforms.Compose(
-                [
-                    transforms.Resize(opt.img_size),
-                    transforms.ToTensor(),
-                    transforms.Normalize([0.5], [0.5]),
-                ]
-            ),
-        ),
-        batch_size=opt.batch_size,
-        shuffle=True,
-    )
-
-
 # Optimizers
 optimizer_G = torch.optim.Adam(
     generator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
@@ -311,12 +273,7 @@ for epoch in range(opt.n_epochs):
                 modal.data,
             )
             # Adversarial loss
-            d_loss = (
-                -torch.mean(real_validity)
-                + torch.mean(fake_validity)
-                + lambda_gp * gradient_penalty
-            )
-
+            
             d_dis_loss = (
                 torch.mean((real_validity - 1) ** 2)
                 + torch.mean(fake_label**2)
@@ -364,7 +321,7 @@ for epoch in range(opt.n_epochs):
                     opt.n_epochs,
                     i,
                     data_len,
-                    d_loss.item(),
+                    d_dis_loss.item(),
                     g_loss.item(),
                 )
             )
