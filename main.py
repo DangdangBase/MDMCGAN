@@ -84,11 +84,20 @@ lambda_gp = 10
 
 # Initialize generator and discriminator
 generator = Generator(opt)
-discriminator = Discriminator(opt)
+discriminator_1 = Discriminator(opt)
+discriminator_2 = Discriminator(opt)
+discriminator_3 = Discriminator(opt)
+discriminator_4 = Discriminator(opt)
+discriminator_5 = Discriminator(opt)
+discriminators = [discriminator_1, discriminator_2, discriminator_3, discriminator_4, discriminator_5]
 
 if cuda:
     generator.cuda()
-    discriminator.cuda()
+    discriminator_1.cuda()
+    discriminator_2.cuda()
+    discriminator_3.cuda()
+    discriminator_4.cuda()
+    discriminator_5.cuda()
 
 # Configure data loader
 
@@ -99,6 +108,10 @@ if opt.dataset == 'mnist_c':
     # Create a list to store the dataloaders
     dataloader = []
     
+    transform = transforms.Compose([
+        transforms.Normalize([0.5], [0.5])
+    ])
+
     for idx, modal in enumerate(arr, start=1):
         # Load data for the current corruption type
         imgs = torch.from_numpy(np.load(f"{mnist_corrupted_folder}/{modal}/train_images.npy")).permute(0, 3, 1, 2)
@@ -107,7 +120,7 @@ if opt.dataset == 'mnist_c':
         modal = torch.tensor([idx] * len(imgs))
         
         # Create a TensorDataset with numeric modality information
-        
+        imgs = transform(imgs.float())
         current_dataset = TensorDataset(imgs, labels, modal)
         
         # Create a DataLoader for the current corruption type
@@ -164,10 +177,22 @@ elif opt.dataset == "fashion":
 optimizer_G = torch.optim.Adam(
     generator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
 )
-optimizer_D = torch.optim.Adam(
-    discriminator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
+optimizer_D_1 = torch.optim.Adam(
+    discriminator_1.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
 )
-
+optimizer_D_2 = torch.optim.Adam(
+    discriminator_2.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
+)
+optimizer_D_3 = torch.optim.Adam(
+    discriminator_3.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
+)
+optimizer_D_4 = torch.optim.Adam(
+    discriminator_4.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
+)
+optimizer_D_5 = torch.optim.Adam(
+    discriminator_5.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
+)
+optimizers = [optimizer_D_1, optimizer_D_2, optimizer_D_3, optimizer_D_4, optimizer_D_5]
 Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if cuda else torch.LongTensor
 
@@ -186,7 +211,7 @@ def sample_image(n_row, batches_done):
     )
 
 
-def compute_gradient_penalty(D, real_samples, fake_samples, labels):
+def compute_gradient_penalty(D, real_samples, fake_samples, labels, modal):
     """Calculates the gradient penalty loss for WGAN GP.
     Warning: It doesn't compute the gradient w.r.t the labels, only w.r.t
     the interpolated real and fake samples, as in the WGAN GP paper.
@@ -198,7 +223,7 @@ def compute_gradient_penalty(D, real_samples, fake_samples, labels):
     interpolates = (alpha * real_samples + ((1 - alpha) * fake_samples)).requires_grad_(
         True
     )
-    d_interpolates = D(interpolates, labels)
+    d_interpolates = D(interpolates, labels, modal)
     fake = Tensor(real_samples.shape[0], 1).fill_(1.0)
     fake.requires_grad = False
     # Get gradient w.r.t. interpolates
@@ -228,12 +253,13 @@ for epoch in range(opt.n_epochs):
             # Move to GPU if necessary
             real_imgs = imgs.type(Tensor)
             labels = labels.type(LongTensor)
+            modal = modal.type(LongTensor)
 
             # ---------------------
             #  Train Discriminator
             # ---------------------
 
-            optimizer_D.zero_grad()
+            optimizers[j].zero_grad()
 
             # Sample noise and labels as generator input
             z = Tensor(np.random.normal(0, 1, (imgs.shape[0], opt.latent_dim)))
@@ -242,22 +268,22 @@ for epoch in range(opt.n_epochs):
             fake_imgs = generator(z, labels)
 
             # Real images
-            real_validity = discriminator(real_imgs, labels)
+            real_validity = discriminators[j](real_imgs, labels, modal)
             # Fake images
-            fake_validity = discriminator(fake_imgs, labels)
+            fake_validity = discriminators[j](fake_imgs, labels, modal)
             # Gradient penalty
             gradient_penalty = compute_gradient_penalty(
-                discriminator, real_imgs.data, fake_imgs.data, labels.data
+                discriminators[j], real_imgs.data, fake_imgs.data, labels.data, modal.data
             )
             # Adversarial loss
             d_loss = (
-                -torch.mean(real_validity)
+                - torch.mean(real_validity)
                 + torch.mean(fake_validity)
                 + lambda_gp * gradient_penalty
             )
 
             d_loss.backward()
-            optimizer_D.step()
+            optimizers[j].step()
 
             optimizer_G.zero_grad()
 
@@ -271,19 +297,21 @@ for epoch in range(opt.n_epochs):
                 fake_imgs = generator(z, labels)
                 # Loss measures generator's ability to fool the discriminator
                 # Train on fake images
-                fake_validity = discriminator(fake_imgs, labels)
+                fake_validity = discriminators[j](fake_imgs, labels, modal)
                 g_loss = -torch.mean(fake_validity)
 
                 g_loss.backward()
                 optimizer_G.step()
 
                 print(
-                    "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]"
+                    "[Epoch %d/%d] [Batch %d/%d] [Order %d/%d] [D loss: %f] [G loss: %f]"
                     % (
                         epoch,
                         opt.n_epochs,
                         i,
                         len(dataloader[j]),
+                        j,
+                        5,
                         d_loss.item(),
                         g_loss.item(),
                     )

@@ -4,12 +4,13 @@ import torch.nn as nn
 
 
 class Generator(nn.Module):
+    # Generate conacatenated data [X_1, X_2, ...]
     def __init__(self, opt):
         super(Generator, self).__init__()
         self.opt = opt
 
         self.label_emb = nn.Embedding(opt.n_classes, opt.n_classes)
-
+ 
         def block(in_feat, out_feat, normalize=True):
             layers = [nn.Linear(in_feat, out_feat)]
             if normalize:
@@ -50,7 +51,7 @@ class Discriminator(nn.Module):
             nn.Linear(512, 1),
         )
 
-    def forward(self, img, labels):
+    def forward(self, img, labels, modal):
         # Concatenate label embedding and image to produce input
         d_in = torch.cat((img.view(img.size(0), -1), self.label_embedding(labels)), -1)
         validity = self.model(d_in)
