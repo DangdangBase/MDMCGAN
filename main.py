@@ -71,6 +71,12 @@ parser.add_argument(
     default="mnist_c",
     help="dataset to use",
 )
+parser.add_argument(
+    "--num_modalities",
+    type=int,
+    default=5,
+    help="number of modalities",
+)
 opt = parser.parse_args()
 print(opt)
 
@@ -89,7 +95,13 @@ discriminator_2 = Discriminator(opt)
 discriminator_3 = Discriminator(opt)
 discriminator_4 = Discriminator(opt)
 discriminator_5 = Discriminator(opt)
-discriminators = [discriminator_1, discriminator_2, discriminator_3, discriminator_4, discriminator_5]
+discriminators = [
+    discriminator_1,
+    discriminator_2,
+    discriminator_3,
+    discriminator_4,
+    discriminator_5,
+]
 
 if cuda:
     generator.cuda()
@@ -101,35 +113,35 @@ if cuda:
 
 # Configure data loader
 
-if opt.dataset == 'mnist_c':
-    mnist_corrupted_folder = './data/mnist_c'
-    arr = ['brightness', 'canny_edges', 'glass_blur', 'identity', 'scale']
-    
+if opt.dataset == "mnist_c":
+    mnist_corrupted_folder = "./data/mnist_c"
+    arr = ["brightness", "canny_edges", "glass_blur", "identity", "scale"]
+
     # Create a list to store the dataloaders
     dataloader = []
-    
-    transform = transforms.Compose([
-        transforms.Normalize([0.5], [0.5])
-    ])
+
+    transform = transforms.Compose([transforms.Normalize([0.5], [0.5])])
 
     for idx, modal in enumerate(arr, start=1):
         # Load data for the current corruption type
-        imgs = torch.from_numpy(np.load(f"{mnist_corrupted_folder}/{modal}/train_images.npy")).permute(0, 3, 1, 2)
-        labels = torch.from_numpy(np.load(f"{mnist_corrupted_folder}/{modal}/train_labels.npy"))
+        imgs = torch.from_numpy(
+            np.load(f"{mnist_corrupted_folder}/{modal}/train_images.npy")
+        ).permute(0, 3, 1, 2)
+        labels = torch.from_numpy(
+            np.load(f"{mnist_corrupted_folder}/{modal}/train_labels.npy")
+        )
         # Append numeric modality information to the dataset
         modal = torch.tensor([idx] * len(imgs))
-        
+
         # Create a TensorDataset with numeric modality information
         imgs = transform(imgs.float())
         current_dataset = TensorDataset(imgs, labels, modal)
-        
+
         # Create a DataLoader for the current corruption type
         current_dataloader = DataLoader(
-            dataset=current_dataset,
-            batch_size=opt.batch_size,
-            shuffle=True
+            dataset=current_dataset, batch_size=opt.batch_size, shuffle=True
         )
-        
+
         # Append the DataLoader to the list
         dataloader.append(current_dataloader)
 
@@ -197,7 +209,7 @@ Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if cuda else torch.LongTensor
 
 
-def sample_image(n_row, batches_done):
+def sample_image(n_row, batches_done, n):
     """Saves a grid of generated digits ranging from 0 to n_classes"""
     # Sample noise
     z = Tensor(np.random.normal(0, 1, (n_row**2, opt.latent_dim)))
@@ -207,7 +219,7 @@ def sample_image(n_row, batches_done):
         labels = LongTensor(labels)
         gen_imgs = generator(z, labels)
     save_image(
-        gen_imgs.data, "images/%d.png" % batches_done, nrow=n_row, normalize=True
+        gen_imgs[n].data, "images/%d.png" % batches_done, nrow=n_row, normalize=True
     )
 
 
@@ -270,14 +282,18 @@ for epoch in range(opt.n_epochs):
             # Real images
             real_validity = discriminators[j](real_imgs, labels, modal)
             # Fake images
-            fake_validity = discriminators[j](fake_imgs, labels, modal)
+            fake_validity = discriminators[j](fake_imgs[j], labels, modal)
             # Gradient penalty
             gradient_penalty = compute_gradient_penalty(
-                discriminators[j], real_imgs.data, fake_imgs.data, labels.data, modal.data
+                discriminators[j],
+                real_imgs.data,
+                fake_imgs[j].data,
+                labels.data,
+                modal.data,
             )
             # Adversarial loss
             d_loss = (
-                - torch.mean(real_validity)
+                -torch.mean(real_validity)
                 + torch.mean(fake_validity)
                 + lambda_gp * gradient_penalty
             )
@@ -297,7 +313,7 @@ for epoch in range(opt.n_epochs):
                 fake_imgs = generator(z, labels)
                 # Loss measures generator's ability to fool the discriminator
                 # Train on fake images
-                fake_validity = discriminators[j](fake_imgs, labels, modal)
+                fake_validity = discriminators[j](fake_imgs[j], labels, modal)
                 g_loss = -torch.mean(fake_validity)
 
                 g_loss.backward()
@@ -318,7 +334,7 @@ for epoch in range(opt.n_epochs):
                 )
 
                 if batches_done % opt.sample_interval == 0:
-                    sample_image(opt.n_classes, batches_done)
+                    sample_image(opt.n_classes, batches_done, j)
                     # save_image(fake_imgs.data[:25], "images/%d.png" % batches_done, nrow=5, normalize=True)
 
                 batches_done += opt.n_critic

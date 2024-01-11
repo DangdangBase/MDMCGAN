@@ -8,6 +8,7 @@ class Generator(nn.Module):
     def __init__(self, opt):
         super(Generator, self).__init__()
         self.opt = opt
+        self.num_modalities = opt.num_modalities
 
         self.label_emb = nn.Embedding(opt.n_classes, opt.n_classes)
  
@@ -18,21 +19,26 @@ class Generator(nn.Module):
             layers.append(nn.LeakyReLU(0.2, inplace=True))
             return layers
 
-        self.model = nn.Sequential(
-            *block(opt.latent_dim + opt.n_classes, 128, normalize=False),
-            *block(128, 256),
-            *block(256, 512),
-            *block(512, 1024),
-            nn.Linear(1024, int(np.prod(opt.img_shape))),
-            nn.Tanh()
-        )
+        self.models = nn.ModuleList()
+        for _ in range(self.num_modalities):
+            model = nn.Sequential(
+                *block(opt.latent_dim + opt.n_classes, 128, normalize=False),
+                *block(128, 256),
+                *block(256, 512),
+                *block(512, 1024),
+                nn.Linear(1024, int(np.prod(opt.img_shape))),
+                nn.Tanh()
+            )
+            self.models.append(model)
 
     def forward(self, z, labels):
-        # Concatenate label embedding and image to produce input
-        gen_input = torch.cat((self.label_emb(labels), z), -1)
-        img = self.model(gen_input)
-        img = img.view(img.shape[0], *self.opt.img_shape)
-        return img
+        generated_modalities = []
+        for cur_model in self.models:
+            gen_input = torch.cat((self.label_emb(labels), z), -1)
+            img = cur_model(gen_input)
+            img = img.view(img.shape[0], *self.opt.img_shape)
+            generated_modalities.append(img)
+        return generated_modalities
 
 
 class Discriminator(nn.Module):
