@@ -18,6 +18,7 @@ from models import Generator, Discriminator
 
 os.makedirs("images", exist_ok=True)
 
+
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--n_epochs", type=int, default=150, help="number of epochs of training"
@@ -83,6 +84,7 @@ print(opt)
 opt.img_shape = (opt.channels, opt.img_size, opt.img_size)
 
 cuda = True if torch.cuda.is_available() else False
+device = torch.device("cuda" if cuda else "cpu")
 opt.n_classes = 10
 
 # Loss weight for gradient penalty
@@ -124,7 +126,7 @@ if opt.dataset == "mnist_c":
         modal = torch.tensor([idx] * len(imgs))
 
         # Create a TensorDataset with numeric modality information
-        imgs = transform(imgs.float())
+        imgs = imgs/255.0
         current_dataset = TensorDataset(imgs, labels, modal)
 
         # Create a DataLoader for the current corruption type
@@ -193,18 +195,21 @@ LongTensor = torch.cuda.LongTensor if cuda else torch.LongTensor
 def sample_image(n_row, batches_done):
     """Saves a grid of generated digits ranging from 0 to n_classes"""
     # Sample noise
-    z = Tensor(np.random.normal(0, 1, (n_row * opt.num_modalities, opt.latent_dim)))
+    z = Tensor(np.random.normal(0, 1, (n_row * opt.num_modalities, opt.latent_dim))).to(device)
     # Get labels ranging from 0 to n_classes for n rows
-    labels = torch.tensor(
-        [num for _ in range(opt.num_modalities) for num in range(n_row)]
-    )
-    modal = torch.tensor([[idx] * n_row for idx in range(5)]).flatten()
+    labels = torch.tensor([num for _ in range(opt.num_modalities) for num in range(n_row)]).to(device)
+    modal = torch.tensor([[idx] * n_row for idx in range(opt.num_modalities)]).flatten().to(device)
 
     with torch.no_grad():
         gen_imgs = generator(z, labels, modal)
+
     save_image(
-        gen_imgs.data, "images/%d.png" % batches_done, nrow=n_row, normalize=True
+        gen_imgs.data,
+        "images/%d.png" % batches_done,
+        nrow=n_row,
+        normalize=True
     )
+
 
 
 def compute_gradient_penalty(D, real_samples, fake_samples, labels, modal):
@@ -309,10 +314,13 @@ for epoch in range(opt.n_epochs):
                 + torch.mean(fake_label**2)
                 + torch.mean(fake_modality**2)
                 + torch.mean(fake_validity**2)
+                + lambda_gp * gradient_penalty
             )
 
-            d_loss.backward()
+            
+            d_dis_loss.backward()
             optimizers_D[j].step()
+
 
             optimizer_G.zero_grad()
 
