@@ -112,7 +112,7 @@ if opt.dataset == "mnist_c":
 
     transform = transforms.Compose([transforms.Normalize([0.5], [0.5])])
 
-    for idx, modal in enumerate(arr, start=1):
+    for idx, modal in enumerate(arr):
         # Load data for the current corruption type
         imgs = torch.from_numpy(
             np.load(f"{mnist_corrupted_folder}/{modal}/train_images.npy")
@@ -242,8 +242,15 @@ def compute_gradient_penalty(D, real_samples, fake_samples, labels, modal):
 
 batches_done = 0
 for epoch in range(opt.n_epochs):
-    for j in range(5):
-        for i, (imgs, labels, modal) in enumerate(dataloader[j]):
+    it_list = []
+    for dl in dataloader:
+        it_list.append(iter(dl))
+
+    data_len = len(dataloader[0])
+
+    for i in range(data_len):
+        for j in range(5):
+            (imgs, labels, modal) = next(it_list[j])
             batch_size = imgs.shape[0]
 
             # Move to GPU if necessary
@@ -309,38 +316,35 @@ for epoch in range(opt.n_epochs):
 
             optimizer_G.zero_grad()
 
-            # Train the generator every n_critic steps
-            if i % opt.n_critic == 0:
-                # -----------------
-                #  Train Generator
-                # -----------------
+        if i % opt.n_critic == 0:
+            # -----------------
+            #  Train Generator
+            # -----------------
 
-                # Generate a batch of images
-                fake_imgs = generator(z, labels, modal)
-                # Loss measures generator's ability to fool the discriminator
-                # Train on fake images
-                fake_validity = discriminators[j](fake_imgs, labels, modal)
-                g_loss = -torch.mean(fake_validity)
+            # Generate a batch of images
+            fake_imgs = generator(z, labels, modal)
+            # Loss measures generator's ability to fool the discriminator
+            # Train on fake images
+            fake_validity = discriminators[j](fake_imgs, labels, modal)
+            g_loss = -torch.mean(fake_validity)
 
-                g_loss.backward()
-                optimizer_G.step()
+            g_loss.backward()
+            optimizer_G.step()
 
-                print(
-                    "[Epoch %d/%d] [Batch %d/%d] [Order %d/%d] [D loss: %f] [G loss: %f]"
-                    % (
-                        epoch,
-                        opt.n_epochs,
-                        i,
-                        len(dataloader[j]),
-                        j,
-                        5,
-                        d_loss.item(),
-                        g_loss.item(),
-                    )
+            print(
+                "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]"
+                % (
+                    epoch,
+                    opt.n_epochs,
+                    i,
+                    data_len,
+                    d_loss.item(),
+                    g_loss.item(),
                 )
+            )
 
-                if batches_done % opt.sample_interval == 0:
-                    sample_image(opt.n_classes, batches_done)
-                    # save_image(fake_imgs.data[:25], "images/%d.png" % batches_done, nrow=5, normalize=True)
+            if batches_done % opt.sample_interval == 0:
+                sample_image(opt.n_classes, batches_done)
+                # save_image(fake_imgs.data[:25], "images/%d.png" % batches_done, nrow=5, normalize=True)
 
-                batches_done += opt.n_critic
+            batches_done += opt.n_critic
