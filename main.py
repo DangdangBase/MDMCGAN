@@ -110,7 +110,12 @@ if opt.dataset == "mnist_c":
     # Create a list to store the dataloaders
     dataloader = []
 
-    transform = transforms.Compose([transforms.Normalize([0.5], [0.5])])
+    transform = transforms.Compose(
+        [
+            transforms.Resize(opt.img_size),
+            transforms.Normalize([0.5], [0.5]),
+        ]
+    )
 
     for idx, modal in enumerate(arr, start=1):
         # Load data for the current corruption type
@@ -131,6 +136,11 @@ if opt.dataset == "mnist_c":
         current_dataloader = DataLoader(
             dataset=current_dataset, batch_size=opt.batch_size, shuffle=True
         )
+
+        # print(imgs[0].data)
+        # print(transforms.ToTensor(imgs[0]))
+        save_image(imgs[8].data, "images/test.png", normalize=True)
+        exit()
 
         # Append the DataLoader to the list
         dataloader.append(current_dataloader)
@@ -155,6 +165,12 @@ elif opt.dataset == "mnist":
         batch_size=opt.batch_size,
         shuffle=True,
     )
+
+    for idx, (img, label) in enumerate(dataloader):
+        save_image(img[0].data, "images/test.png", normalize=True)
+        print(img[0].data)
+        exit()
+
 elif opt.dataset == "fashion":
     os.makedirs("data/fashion-mnist", exist_ok=True)
     dataloader = torch.utils.data.DataLoader(
