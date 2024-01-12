@@ -1,6 +1,7 @@
 import argparse
 import os
 import numpy as np
+import csv
 import math
 import sys
 
@@ -217,8 +218,13 @@ def count_parameters(model):
 # ----------
 
 batches_done = 0
-workload = 0
+d_workload = 0
+g_workload = 0
 g_losses = [None for _ in range(opt.num_modalities)]
+
+result_f = open("mdmcgan_result.csv", "w")
+writer = csv.writer(result_f)
+writer.writerow(["Epoch", "Batch", "D loss", "G loss", "D workload", "G workload"])
 
 for epoch in range(opt.n_epochs):
     it_list = []
@@ -279,7 +285,7 @@ for epoch in range(opt.n_epochs):
                 modal.data,
             )
             # Adversarial loss
-            
+
             d_dis_loss = (
                 torch.mean((real_validity - 1) ** 2)
                 + torch.mean(fake_label**2)
@@ -303,6 +309,8 @@ for epoch in range(opt.n_epochs):
                 fake_validity = discriminators[j](fake_imgs, labels, modal)
                 g_losses[j] = -torch.mean(fake_validity)
 
+        d_workload += 6 * opt.batch_size * count_parameters(discriminators[0])
+
         if is_critic:
             # -----------------
             #  Train Generator
@@ -325,12 +333,12 @@ for epoch in range(opt.n_epochs):
             # -----------------
 
             k = 1
-            workload += opt.batch_size * (
+            g_workload += opt.batch_size * (
                 data_size * opt.num_modalities + k * count_parameters(generator)
             )
 
             print(
-                "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f] [G workload: %d]"
+                "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f] [D workload: %d] [G workload: %d]"
                 % (
                     epoch,
                     opt.n_epochs,
@@ -338,7 +346,8 @@ for epoch in range(opt.n_epochs):
                     data_len,
                     d_dis_loss.item(),
                     g_loss.item(),
-                    workload,
+                    d_workload,
+                    g_workload,
                 )
             )
 
@@ -346,4 +355,11 @@ for epoch in range(opt.n_epochs):
                 sample_image(opt.n_classes, batches_done)
                 # save_image(fake_imgs.data[:25], "images/%d.png" % batches_done, nrow=5, normalize=True)
 
+                writer.writerow(
+                    [epoch, i, d_dis_loss.item(), g_loss.item(), d_workload, g_workload]
+                )
+                result_f.flush()
+
             batches_done += opt.n_critic
+
+result_f.close()
