@@ -254,7 +254,7 @@ for epoch in range(opt.n_epochs):
             # Real images
             real_validity = discriminators[j](real_imgs, labels, modal)
 
-            fake_labels = torch.randint(0, 10, size=(labels.size(0),), device="cuda:0")
+            fake_labels = torch.randint(0, 10, size=(labels.size(0),), device=device)
             fake_labels = torch.where(
                 fake_labels == labels,
                 torch.randint_like(fake_labels, 0, 10),
@@ -262,7 +262,7 @@ for epoch in range(opt.n_epochs):
             )
             fake_label = discriminators[j](real_imgs, fake_labels, modal)
 
-            fake_modals = torch.randint(0, 5, size=(modal.size(0),), device="cuda:0")
+            fake_modals = torch.randint(0, 5, size=(modal.size(0),), device=device)
             fake_modals = torch.where(
                 fake_modals == modal, torch.randint_like(fake_modals, 0, 5), fake_modals
             )
