@@ -56,7 +56,7 @@ parser.add_argument(
 parser.add_argument(
     "--num_modalities",
     type=int,
-    default=5,
+    default=2,
     help="number of modalities",
 )
 

@@ -1,0 +1,2 @@
+Epoch,Batch,D loss,G loss,D workload,G workload
+0,0,8.498894691467285,-0.002284664660692215,258391296,97023808

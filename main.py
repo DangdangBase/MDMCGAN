@@ -195,17 +195,17 @@ for epoch in range(opt.n_epochs):
             # Real images
             real_validity = discriminators[j](real_imgs, labels, modal)
 
-            fake_labels = torch.randint(0, 10, size=(labels.size(0),), device=device)
+            fake_labels = torch.randint(0, opt.n_classes, size=(labels.size(0),), device=device)
             fake_labels = torch.where(
                 fake_labels == labels,
-                torch.randint_like(fake_labels, 0, 10),
+                torch.randint_like(fake_labels, 0, opt.n_classes),
                 fake_labels,
             )
             fake_label = discriminators[j](real_imgs, fake_labels, modal)
 
-            fake_modals = torch.randint(0, 5, size=(modal.size(0),), device=device)
+            fake_modals = torch.randint(0, opt.num_modalities, size=(modal.size(0),), device=device)
             fake_modals = torch.where(
-                fake_modals == modal, torch.randint_like(fake_modals, 0, 5), fake_modals
+                fake_modals == modal, torch.randint_like(fake_modals, 0, opt.num_modalities), fake_modals
             )
             fake_modality = discriminators[j](real_imgs, labels, fake_modals)
 
@@ -273,7 +273,7 @@ for epoch in range(opt.n_epochs):
             )
 
             print(
-                "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f] [D workload: %d] [G workload: %d]"
+                "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]"
                 % (
                     epoch,
                     opt.n_epochs,
@@ -281,8 +281,6 @@ for epoch in range(opt.n_epochs):
                     data_len,
                     d_dis_loss.item(),
                     g_loss.item(),
-                    d_workload,
-                    g_workload,
                 )
             )
 
