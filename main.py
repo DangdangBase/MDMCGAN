@@ -1,91 +1,24 @@
-import argparse
 import os
 import numpy as np
 import csv
-import math
-import sys
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import torch.autograd as autograd
 
 import torchvision.transforms as transforms
 from torchvision.utils import save_image
 from torch.utils.data import DataLoader, TensorDataset
-from torchvision import datasets
 
 from models import Generator, Discriminator
+from arg_parser import opt
 
 os.makedirs("images", exist_ok=True)
 
 
-parser = argparse.ArgumentParser()
-parser.add_argument(
-    "--n_epochs", type=int, default=150, help="number of epochs of training"
-)
-parser.add_argument("--batch_size", type=int, default=64, help="size of the batches")
-parser.add_argument("--lr", type=float, default=0.0002, help="adam: learning rate")
-parser.add_argument(
-    "--b1",
-    type=float,
-    default=0.5,
-    help="adam: decay of first order momentum of gradient",
-)
-parser.add_argument(
-    "--b2",
-    type=float,
-    default=0.999,
-    help="adam: decay of first order momentum of gradient",
-)
-parser.add_argument(
-    "--n_cpu",
-    type=int,
-    default=8,
-    help="number of cpu threads to use during batch generation",
-)
-parser.add_argument(
-    "--latent_dim", type=int, default=100, help="dimensionality of the latent space"
-)
-parser.add_argument(
-    "--img_size", type=int, default=28, help="size of each image dimension"
-)
-parser.add_argument("--channels", type=int, default=1, help="number of image channels")
-parser.add_argument(
-    "--n_critic",
-    type=int,
-    default=5,
-    help="number of training steps for discriminator per iter",
-)
-parser.add_argument(
-    "--clip_value",
-    type=float,
-    default=0.01,
-    help="lower and upper clip value for disc. weights",
-)
-parser.add_argument(
-    "--sample_interval", type=int, default=400, help="interval betwen image samples"
-)
-parser.add_argument(
-    "--dataset",
-    type=str,
-    choices=["mnist", "fashion", "mnist_c"],
-    default="mnist_c",
-    help="dataset to use",
-)
-parser.add_argument(
-    "--num_modalities",
-    type=int,
-    default=5,
-    help="number of modalities",
-)
-opt = parser.parse_args()
-print(opt)
-
-opt.img_shape = (opt.channels, opt.img_size, opt.img_size)
-
 cuda = True if torch.cuda.is_available() else False
 device = torch.device("cuda" if cuda else "cpu")
+
+opt.img_shape = (opt.channels, opt.img_size, opt.img_size)
 opt.n_classes = 10
 
 # Loss weight for gradient penalty
@@ -140,6 +73,8 @@ if opt.dataset == "mnist_c":
         dataloader.append(current_dataloader)
 
     # Now, dataloaders is a list containing dataloaders for each corruption type, including numeric modality information
+else:
+    raise NotImplementedError
 
 # Optimizers
 optimizer_G = torch.optim.Adam(
@@ -217,14 +152,14 @@ def count_parameters(model):
 #  Training
 # ----------
 
+result_f = open("mdmcgan_result.csv", "w")
+writer = csv.writer(result_f)
+writer.writerow(["Epoch", "Batch", "D loss", "G loss", "D workload", "G workload"])
+
 batches_done = 0
 d_workload = 0
 g_workload = 0
 g_losses = [None for _ in range(opt.num_modalities)]
-
-result_f = open("mdmcgan_result.csv", "w")
-writer = csv.writer(result_f)
-writer.writerow(["Epoch", "Batch", "D loss", "G loss", "D workload", "G workload"])
 
 for epoch in range(opt.n_epochs):
     it_list = []
