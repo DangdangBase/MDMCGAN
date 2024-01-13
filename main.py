@@ -7,16 +7,20 @@ import torch.autograd as autograd
 
 import torchvision.transforms as transforms
 from torchvision.utils import save_image
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, Subset
 
 from models import Generator, Discriminator
 from arg_parser import opt
+
+import pytorch_fid_wrapper as pfw
 
 os.makedirs("images", exist_ok=True)
 
 
 cuda = True if torch.cuda.is_available() else False
 device = torch.device("cuda" if cuda else "cpu")
+
+pfw.set_config(batch_size=10, dims=192, device=device)
 
 opt.img_shape = (opt.channels, opt.img_size, opt.img_size)
 opt.n_classes = 10
@@ -41,10 +45,11 @@ if cuda:
 
 if opt.dataset == "mnist_c":
     mnist_corrupted_folder = "./data/mnist_c"
-    arr = ["brightness", "canny_edges", "glass_blur", "identity", "scale"]
+    arr = ["canny_edges", "identity"]
 
     # Create a list to store the dataloaders
     dataloader = []
+    validation_arrs = []
 
     transform = transforms.Compose([transforms.Normalize([0.5], [0.5])])
 
@@ -62,17 +67,27 @@ if opt.dataset == "mnist_c":
         # Create a TensorDataset with numeric modality information
         imgs = imgs / 255.0
         current_dataset = TensorDataset(imgs, labels, modal)
+        dataset_size = len(current_dataset)
+        train_size = int(dataset_size * 0.9)
+        validation_size = int(dataset_size - train_size)
+
+        train_dataset = Subset(current_dataset, range(train_size))
+
         data_size = torch.flatten(imgs[0]).size(0)
 
         # Create a DataLoader for the current corruption type
-        current_dataloader = DataLoader(
-            dataset=current_dataset, batch_size=opt.batch_size, shuffle=True
+        train_dataloader = DataLoader(
+            dataset=train_dataset, batch_size=opt.batch_size, shuffle=True
         )
 
         # Append the DataLoader to the list
-        dataloader.append(current_dataloader)
+        dataloader.append(train_dataloader)
 
-    # Now, dataloaders is a list containing dataloaders for each corruption type, including numeric modality information
+        imgs_list = imgs[train_size:]
+        imgs_list = imgs_list.expand(validation_size, 3, 28, 28)
+
+        real_m, real_s = pfw.get_stats(imgs_list)
+        validation_arrs.append((real_m, real_s))
 else:
     raise NotImplementedError
 
@@ -148,13 +163,54 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
+def model_evaluation():
+    z = Tensor(
+        np.random.normal(0, 1, (opt.n_classes * opt.num_modalities, opt.latent_dim))
+    ).to(device)
+    labels = torch.tensor(
+        [num for _ in range(opt.num_modalities) for num in range(opt.n_classes)]
+    ).to(device)
+    modal = (
+        torch.tensor([[idx] * opt.n_classes for idx in range(opt.num_modalities)])
+        .flatten()
+        .to(device)
+    )
+
+    with torch.no_grad():
+        gen_imgs = generator(z, labels, modal)
+        gen_imgs = gen_imgs.expand(opt.n_classes * opt.num_modalities, 3, 28, 28)
+
+        imgs_list = torch.chunk(gen_imgs, opt.num_modalities)
+        fids = []
+
+        for i, (real_m, real_s) in enumerate(validation_arrs):
+            fid = pfw.fid(imgs_list[i], real_m=real_m, real_s=real_s)
+            fids.append(fid)
+
+    return fids
+
+
 # ----------
 #  Training
 # ----------
 
 result_f = open("mdmcgan_result.csv", "w")
 writer = csv.writer(result_f)
-writer.writerow(["Epoch", "Batch", "D loss", "G loss", "D workload", "G workload"])
+writer.writerow(
+    [
+        "Epoch",
+        "Batch",
+        "D loss",
+        "G loss",
+        "D workload",
+        "G workload",
+        "FID1",
+        "FID2",
+        "FID3",
+        "FID4",
+        "FID5",
+    ]
+)
 
 batches_done = 0
 d_workload = 0
@@ -288,8 +344,12 @@ for epoch in range(opt.n_epochs):
                 sample_image(opt.n_classes, batches_done)
                 # save_image(fake_imgs.data[:25], "images/%d.png" % batches_done, nrow=5, normalize=True)
 
+                fids = model_evaluation()
+                print("FIDs:", fids)
+
                 writer.writerow(
                     [epoch, i, d_dis_loss.item(), g_loss.item(), d_workload, g_workload]
+                    + fids
                 )
                 result_f.flush()
 
