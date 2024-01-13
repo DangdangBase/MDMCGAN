@@ -231,7 +231,7 @@ for epoch in range(opt.n_epochs):
 
                 fake_features = generator(z, labels, modal)
                 fake_validity = discriminators[j](fake_features, labels, modal)
-                g_losses[j] = -torch.mean(fake_validity)
+                g_losses[j] = torch.mean((fake_validity - 1) ** 2)
 
         d_workload += 6 * opt.batch_size * count_parameters(discriminators[0])
 
