@@ -28,8 +28,9 @@ parser.add_argument(
     "--latent_dim", type=int, default=100, help="dimensionality of the latent space"
 )
 parser.add_argument(
-    "--img_size", type=int, default=28, help="size of each image dimension"
+    "--feature_size", type=int, default=128, help="size of each feature dimension"
 )
+parser.add_argument("--feature_num", type=int, default=3, help="number of features")
 parser.add_argument("--channels", type=int, default=1, help="number of image channels")
 parser.add_argument(
     "--n_critic",
@@ -50,7 +51,7 @@ parser.add_argument(
     "--dataset",
     type=str,
     choices=["mnist", "fashion", "mnist_c"],
-    default="mnist_c",
+    default="uci_har",
     help="dataset to use",
 )
 parser.add_argument(
