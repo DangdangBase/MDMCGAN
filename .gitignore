@@ -134,3 +134,4 @@ images_old/*
 .DS_store
 
 *_result.csv
+gen_features/*

@@ -4,7 +4,6 @@ import csv
 import torch
 import torch.autograd as autograd
 
-from torchvision.utils import save_image
 from torch.utils.data import DataLoader, TensorDataset
 
 from models.mdmcgan import Generator, Discriminator
@@ -13,7 +12,7 @@ from arg_parser import opt
 from utils import count_parameters
 
 
-os.makedirs("images", exist_ok=True)
+os.makedirs("gen_features/mdmcgan", exist_ok=True)
 
 
 cuda = True if torch.cuda.is_available() else False
@@ -21,7 +20,7 @@ device = torch.device("cuda" if cuda else "cpu")
 
 
 opt.feature_shape = (opt.channels, opt.feature_size, opt.feature_num)
-opt.n_classes = 10
+opt.n_classes = 6
 
 # Loss weight for gradient penalty
 lambda_gp = 10
@@ -82,28 +81,24 @@ Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if cuda else torch.LongTensor
 
 
-def sample_image(n_row, batches_done):
+def sample_features(batches_done):
     """Saves a grid of generated digits ranging from 0 to n_classes"""
     # Sample noise
-    z = Tensor(np.random.normal(0, 1, (n_row * opt.num_modalities, opt.latent_dim))).to(
-        device
+    z = Tensor(
+        np.random.normal(0, 1, (opt.num_modalities * opt.n_classes, opt.latent_dim))
     )
     # Get labels ranging from 0 to n_classes for n rows
     labels = torch.tensor(
-        [num for _ in range(opt.num_modalities) for num in range(n_row)]
-    ).to(device)
-    modal = (
-        torch.tensor([[idx] * n_row for idx in range(opt.num_modalities)])
-        .flatten()
-        .to(device)
+        [num for _ in range(opt.num_modalities) for num in range(opt.n_classes)]
+    )
+    modal = torch.tensor(
+        [idx for idx in range(opt.num_modalities) for _ in range(opt.n_classes)]
     )
 
     with torch.no_grad():
         gen_features = generator(z, labels, modal)
 
-    save_image(
-        gen_features.data, "images/%d.png" % batches_done, nrow=n_row, normalize=True
-    )
+    np.save("gen_features/mdmcgan/%d" % batches_done, gen_features.numpy())
 
 
 def compute_gradient_penalty(D, real_samples, fake_samples, labels, modal):
@@ -268,7 +263,7 @@ for epoch in range(opt.n_epochs):
             )
 
             if batches_done % opt.sample_interval == 0:
-                sample_image(opt.n_classes, batches_done)
+                sample_features(batches_done)
 
                 writer.writerow(
                     [epoch, i, d_dis_loss.item(), g_loss.item(), d_workload, g_workload]
