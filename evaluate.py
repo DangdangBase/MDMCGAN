@@ -12,6 +12,18 @@ parser.add_argument(
     default="mdmcgan",
     help="algorithm to evaluate",
 )
+parser.add_argument(
+    "--non_iid",
+    action="store_true",
+    help="use non-iid dataset",
+)
+parser.add_argument(
+    "--no-non_iid",
+    dest="non_iid",
+    action="store_false",
+    help="use iid dataset",
+)
+parser.set_defaults(non_iid=True)
 opt = parser.parse_args()
 print(opt)
 
@@ -33,7 +45,9 @@ x = np.concatenate([x_acc, x_gyro], axis=1)
 
 Y_gen = np.load(f"{generated_folder}/labels.npy")
 
-X_gen = np.load(f"{generated_folder}/{opt.algorithm}.npy")
+X_gen = np.load(
+    f"{generated_folder}/{'non_iid' if opt.non_iid else 'iid'}_{opt.algorithm}.npy"
+)
 X_gen = np.squeeze(X_gen)
 X_gen = np.concatenate(np.moveaxis(X_gen, 2, 0), axis=1)
 

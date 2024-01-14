@@ -100,7 +100,9 @@ LongTensor = torch.cuda.LongTensor if cuda else torch.LongTensor
 
 
 generator = mdmcgan_gen(opt) if opt.algorithm == "mdmcgan" else cond_wgan_gp_gen(opt)
-generator.load_state_dict(torch.load(f"generator/{opt.algorithm}"))
+generator.load_state_dict(
+    torch.load(f"generator/{'non_iid' if opt.non_iid else 'iid'}_{opt.algorithm}")
+)
 
 
 desired_ratios = [0.1, 0.2, 0.3, 0.2, 0.1, 0.1]
@@ -125,5 +127,8 @@ with torch.no_grad():
     else:
         gen_features = generator(z, labels)
 
-np.save(f"UCI_HAR/gen_data/{opt.algorithm}", gen_features.numpy())
+np.save(
+    f"UCI_HAR/gen_data/{'non_iid' if opt.non_iid else 'iid'}_{opt.algorithm}",
+    gen_features.numpy(),
+)
 np.save("UCI_HAR/gen_data/labels", labels.numpy())

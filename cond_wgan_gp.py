@@ -205,4 +205,7 @@ for epoch in range(opt.n_epochs):
 result_f.close()
 
 # save model
-torch.save(generator.state_dict(), "generator/cond_wgan_gp")
+torch.save(
+    generator.state_dict(),
+    f"generator/{'non_iid' if opt.non_iid else 'iid'}_cond_wgan_gp",
+)
