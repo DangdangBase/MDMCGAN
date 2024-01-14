@@ -12,6 +12,7 @@ from arg_parser import opt
 from utils import count_parameters
 
 
+os.makedirs("generator", exist_ok=True)
 os.makedirs("gen_features/mdmcgan", exist_ok=True)
 
 
@@ -273,3 +274,6 @@ for epoch in range(opt.n_epochs):
             batches_done += opt.n_critic
 
 result_f.close()
+
+# save model
+torch.save(generator.state_dict(), "generator/mdmcgan")

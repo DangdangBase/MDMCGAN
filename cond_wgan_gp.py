@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from models.cond_wgan_gp import Generator, Discriminator
 from utils import count_parameters
 
+os.makedirs("generator", exist_ok=True)
 os.makedirs("gen_features/cond_wgan_gp", exist_ok=True)
 
 parser = argparse.ArgumentParser()
@@ -272,3 +273,8 @@ for epoch in range(opt.n_epochs):
                 result_f.flush()
 
             batches_done += opt.n_critic
+
+result_f.close()
+
+# save model
+torch.save(generator.state_dict(), "generator/cond_wgan_gp")
