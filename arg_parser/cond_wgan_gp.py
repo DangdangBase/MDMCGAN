@@ -5,7 +5,7 @@ parser.add_argument(
     "--n_epochs", type=int, default=500, help="number of epochs of training"
 )
 parser.add_argument("--batch_size", type=int, default=64, help="size of the batches")
-parser.add_argument("--lr", type=float, default=0.00005, help="adam: learning rate")
+parser.add_argument("--lr", type=float, default=0.0002, help="adam: learning rate")
 parser.add_argument(
     "--b1",
     type=float,
@@ -30,8 +30,10 @@ parser.add_argument(
 parser.add_argument(
     "--feature_size", type=int, default=128, help="size of each feature dimension"
 )
-parser.add_argument("--feature_num", type=int, default=3, help="number of features")
-parser.add_argument("--channels", type=int, default=1, help="number of image channels")
+parser.add_argument("--feature_num", type=int, default=6, help="number of features")
+parser.add_argument(
+    "--channels", type=int, default=1, help="number of feature channels"
+)
 parser.add_argument(
     "--n_critic",
     type=int,
@@ -45,20 +47,14 @@ parser.add_argument(
     help="lower and upper clip value for disc. weights",
 )
 parser.add_argument(
-    "--sample_interval", type=int, default=400, help="interval betwen image samples"
+    "--sample_interval", type=int, default=400, help="interval betwen feature samples"
 )
 parser.add_argument(
     "--dataset",
     type=str,
-    choices=["mnist", "fashion", "mnist_c"],
+    choices=["uci_har"],
     default="uci_har",
     help="dataset to use",
-)
-parser.add_argument(
-    "--num_modalities",
-    type=int,
-    default=2,
-    help="number of modalities",
 )
 parser.add_argument(
     "--non_iid",
@@ -72,6 +68,9 @@ parser.add_argument(
     help="use iid dataset",
 )
 parser.set_defaults(non_iid=True)
-
 opt = parser.parse_args()
+
+opt.feature_shape = (opt.channels, opt.feature_size, opt.feature_num)
+opt.n_classes = 6
+
 print(opt)

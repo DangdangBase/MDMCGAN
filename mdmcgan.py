@@ -7,7 +7,7 @@ import torch.autograd as autograd
 from torch.utils.data import DataLoader, TensorDataset
 
 from models.mdmcgan import Generator, Discriminator
-from arg_parser import opt
+from arg_parser.mdmcgan import opt
 
 from utils import count_parameters
 
@@ -19,9 +19,6 @@ os.makedirs("gen_features/mdmcgan", exist_ok=True)
 cuda = True if torch.cuda.is_available() else False
 device = torch.device("cuda" if cuda else "cpu")
 
-
-opt.feature_shape = (opt.channels, opt.feature_size, opt.feature_num)
-opt.n_classes = 6
 
 # Loss weight for gradient penalty
 lambda_gp = 10
