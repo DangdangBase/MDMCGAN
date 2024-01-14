@@ -9,10 +9,11 @@ import torchvision.transforms as transforms
 from torchvision.utils import save_image
 from torch.utils.data import DataLoader, TensorDataset, Subset
 
-from models import Generator, Discriminator
+from models.mdmcgan import Generator, Discriminator
 from arg_parser import opt
 
 import pytorch_fid_wrapper as pfw
+from utils import count_parameters
 
 os.makedirs("images", exist_ok=True)
 
@@ -135,10 +136,6 @@ def compute_gradient_penalty(D, real_samples, fake_samples, labels, modal):
     gradients = gradients[0].view(gradients[0].size(0), -1)
     gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
     return gradient_penalty
-
-
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
 # ----------
