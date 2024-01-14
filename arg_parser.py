@@ -60,6 +60,18 @@ parser.add_argument(
     default=2,
     help="number of modalities",
 )
+parser.add_argument(
+    "--non_iid",
+    action="store_true",
+    help="use non-iid dataset",
+)
+parser.add_argument(
+    "--no-non_iid",
+    dest="non_iid",
+    action="store_false",
+    help="use iid dataset",
+)
+parser.set_defaults(non_iid=True)
 
 opt = parser.parse_args()
 print(opt)

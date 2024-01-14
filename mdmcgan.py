@@ -1,19 +1,17 @@
 import os
 import numpy as np
 import csv
-
 import torch
 import torch.autograd as autograd
 
-import torchvision.transforms as transforms
 from torchvision.utils import save_image
-from torch.utils.data import DataLoader, TensorDataset, Subset
+from torch.utils.data import DataLoader, TensorDataset
 
 from models.mdmcgan import Generator, Discriminator
 from arg_parser import opt
 
-import pytorch_fid_wrapper as pfw
 from utils import count_parameters
+
 
 os.makedirs("images", exist_ok=True)
 
@@ -21,7 +19,6 @@ os.makedirs("images", exist_ok=True)
 cuda = True if torch.cuda.is_available() else False
 device = torch.device("cuda" if cuda else "cpu")
 
-pfw.set_config(batch_size=10, dims=192, device=device)
 
 opt.feature_shape = (opt.channels, opt.feature_size, opt.feature_num)
 opt.n_classes = 10
@@ -45,7 +42,7 @@ if cuda:
 # Configure data loader
 
 if opt.dataset == "uci_har":
-    uci_har_folder = "./UCI_HAR/processed_data"
+    uci_har_folder = f"UCI_HAR/{'filtered_data' if opt.non_iid else 'processed_data'}"
     arr = ["acc", "gyro"]
 
     labels = torch.from_numpy(np.load(f"{uci_har_folder}/labels.npy"))
