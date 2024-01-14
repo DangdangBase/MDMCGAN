@@ -7,7 +7,7 @@ import torch.autograd as autograd
 from torch.utils.data import DataLoader, TensorDataset
 
 from models.mdmcgan import Generator, Discriminator
-from arg_parser.mdmcgan import opt
+from train_params import opt
 
 from utils import count_parameters
 
@@ -77,26 +77,6 @@ for D in discriminators:
 
 Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if cuda else torch.LongTensor
-
-
-def sample_features(batches_done):
-    """Saves a grid of generated digits ranging from 0 to n_classes"""
-    # Sample noise
-    z = Tensor(
-        np.random.normal(0, 1, (opt.num_modalities * opt.n_classes, opt.latent_dim))
-    )
-    # Get labels ranging from 0 to n_classes for n rows
-    labels = torch.tensor(
-        [num for _ in range(opt.num_modalities) for num in range(opt.n_classes)]
-    )
-    modal = torch.tensor(
-        [idx for idx in range(opt.num_modalities) for _ in range(opt.n_classes)]
-    )
-
-    with torch.no_grad():
-        gen_features = generator(z, labels, modal)
-
-    np.save("gen_features/mdmcgan/%d" % batches_done, gen_features.numpy())
 
 
 def compute_gradient_penalty(D, real_samples, fake_samples, labels, modal):
@@ -261,8 +241,6 @@ for epoch in range(opt.n_epochs):
             )
 
             if batches_done % opt.sample_interval == 0:
-                sample_features(batches_done)
-
                 writer.writerow(
                     [epoch, i, d_dis_loss.item(), g_loss.item(), d_workload, g_workload]
                 )
