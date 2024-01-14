@@ -132,7 +132,7 @@ def compute_gradient_penalty(D, real_samples, fake_samples, labels, modal):
 #  Training
 # ----------
 
-result_f = open("mdmcgan_result.csv", "w")
+result_f = open(f"{'non_iid' if opt.non_iid else 'iid'}_mdmcgan_result.csv", "w")
 writer = csv.writer(result_f)
 writer.writerow(["Epoch", "Batch", "D loss", "G loss", "D workload", "G workload"])
 
