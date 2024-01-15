@@ -36,6 +36,7 @@ parser.add_argument(
 parser.add_argument(
     "--feature_size", type=int, default=128, help="size of each feature dimension"
 )
+parser.add_argument("--feature_num", type=int, default=3, help="number of features")
 parser.add_argument("--channels", type=int, default=1, help="number of image channels")
 parser.add_argument(
     "--n_critic",
@@ -86,7 +87,6 @@ parser.add_argument(
 parser.set_defaults(non_iid=True)
 opt = parser.parse_args()
 
-opt.feature_num = 3 if opt.algorithm == "mdmcgan" else 6
 opt.feature_shape = (opt.channels, opt.feature_size, opt.feature_num)
 opt.n_classes = 6
 
@@ -126,6 +126,8 @@ with torch.no_grad():
         gen_features = torch.cat(gen_features_list, dim=3)
     else:
         gen_features = generator(z, labels)
+        gen_copy = gen_features.clone().detach()
+        gen_features = torch.cat([gen_features, gen_copy], dim=3)
 
 np.save(
     f"UCI_HAR/gen_data/{'non_iid' if opt.non_iid else 'iid'}_{opt.algorithm}",
