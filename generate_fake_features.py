@@ -80,7 +80,7 @@ parser.add_argument(
 parser.add_argument(
     "--algorithm",
     type=str,
-    choices=["mdmcgan", "cond_wgan_gp"],
+    choices=["mdmcgan", "cond_wgan_gp", "orig_cond_wgan_gp"],
     default="mdmcgan",
     help="feature generating algorithm to use",
 )
@@ -99,10 +99,22 @@ Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if cuda else torch.LongTensor
 
 
-generator = mdmcgan_gen(opt) if opt.algorithm == "mdmcgan" else cond_wgan_gp_gen(opt)
-generator.load_state_dict(
-    torch.load(f"generator/{'non_iid' if opt.non_iid else 'iid'}_{opt.algorithm}")
-)
+if opt.algorithm == "orig_cond_wgan_gp":
+    generators = []
+    for i in range(opt.num_modalities):
+        generators.append(cond_wgan_gp_gen(opt))
+        generators[i].load_state_dict(
+            torch.load(
+                f"generator/{'non_iid' if opt.non_iid else 'iid'}_{opt.algorithm}_{i}"
+            )
+        )
+else:
+    generator = (
+        mdmcgan_gen(opt) if opt.algorithm == "mdmcgan" else cond_wgan_gp_gen(opt)
+    )
+    generator.load_state_dict(
+        torch.load(f"generator/{'non_iid' if opt.non_iid else 'iid'}_{opt.algorithm}")
+    )
 
 
 desired_ratios = [0.1, 0.2, 0.3, 0.2, 0.1, 0.1]
@@ -124,10 +136,16 @@ with torch.no_grad():
             gen_features_list.append(generator(z, labels, cur_modal))
 
         gen_features = torch.cat(gen_features_list, dim=3)
-    else:
+    elif opt.algorithm == "cond_wgan_gp":
         gen_features = generator(z, labels)
         gen_copy = gen_features.clone().detach()
         gen_features = torch.cat([gen_features, gen_copy], dim=3)
+    else:
+        gen_features_list = []
+        for i in range(opt.num_modalities):
+            gen_features_list.append(generators[i](z, labels))
+        gen_features = torch.cat(gen_features_list, dim=3)
+
 
 np.save(
     f"UCI_HAR/gen_data/{'non_iid' if opt.non_iid else 'iid'}_{opt.algorithm}",
