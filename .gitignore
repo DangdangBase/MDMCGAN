@@ -134,4 +134,5 @@ images_old/*
 .DS_store
 
 *_result.csv
+*_score.csv
 gen_features/*
