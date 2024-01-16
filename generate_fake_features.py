@@ -1,6 +1,8 @@
 import argparse
 import numpy as np
 import torch
+import matplotlib.pyplot as plt
+
 
 from models.mdmcgan import Generator as mdmcgan_gen
 from models.cond_wgan_gp import Generator as cond_wgan_gp_gen
@@ -116,9 +118,10 @@ else:
         torch.load(f"generator/{'non_iid' if opt.non_iid else 'iid'}_{opt.algorithm}")
     )
 
+gen_label = 0
 
-desired_ratios = [0.1, 0.2, 0.3, 0.2, 0.1, 0.1]
-total_samples = 500
+desired_ratios = [1 if i == gen_label else 0 for i in range(6)]
+total_samples = 6
 counts = [int(ratio * total_samples) for ratio in desired_ratios]
 
 
@@ -136,6 +139,15 @@ with torch.no_grad():
             gen_features_list.append(generator(z, labels, cur_modal))
 
         gen_features = torch.cat(gen_features_list, dim=3)
+        gen_features = gen_features.squeeze()
+
+        tmp = np.mean(gen_features.numpy(), axis=2)
+
+        for i in range(6):
+            plt.subplot(6, 2, i + 1)
+            plt.plot(tmp[i])
+            plt.title(f"real_{i}")
+
     elif opt.algorithm == "cond_wgan_gp":
         gen_features = generator(z, labels)
         gen_copy = gen_features.clone().detach()
@@ -146,6 +158,30 @@ with torch.no_grad():
             gen_features_list.append(generators[i](z, labels))
         gen_features = torch.cat(gen_features_list, dim=3)
 
+
+processed_folder = "UCI_HAR/processed_data"
+
+labels = np.load(f"{processed_folder}/labels.npy")
+acc_features = np.load(f"{processed_folder}/acc_features.npy")
+gyro_features = np.load(f"{processed_folder}/gyro_features.npy")
+
+gen_label_idx = np.where(labels == gen_label)[0]
+
+labels_filtered = labels[gen_label_idx]
+acc_features = acc_features[gen_label_idx]
+gyro_features = gyro_features[gen_label_idx]
+
+
+data = np.concatenate([acc_features, gyro_features], axis=3)
+data = np.squeeze(data)
+data = np.mean(data, axis=0)
+tmp = np.hsplit(data, 6)
+
+for i in range(6):
+    plt.subplot(6, 2, 6 + i + 1)
+    plt.plot(tmp[i])
+    plt.title(f"gen_{i}")
+plt.show()
 
 np.save(
     f"UCI_HAR/gen_data/{'non_iid' if opt.non_iid else 'iid'}_{opt.algorithm}",
