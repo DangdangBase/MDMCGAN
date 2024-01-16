@@ -87,6 +87,8 @@ parser.add_argument(
     help="feature generating algorithm to use",
 )
 parser.set_defaults(non_iid=True)
+
+parser.add_argument("--avg_interval", type=int, default=4, help="interval of graph smoothing")
 opt = parser.parse_args()
 
 opt.feature_shape = (opt.channels, opt.feature_size, opt.feature_num)
@@ -99,6 +101,24 @@ device = torch.device("cuda" if cuda else "cpu")
 
 Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if cuda else torch.LongTensor
+
+
+def interval_avg(data:np.ndarray, interval=4):
+    # 8개 datapoint로 평균
+    if data.ndim == 3:
+        data = data.reshape((data.shape[0], data.shape[1]))
+    new_points = data.shape[1] // interval
+    if data.shape[1] % interval > 0:
+        new_points += 1
+    new_data=np.zeros((data.shape[0], new_points))
+    for i in range(new_points):
+        if i < new_points-1:
+            new_data[:,i] = data[:,i*interval:(i+1)*interval].mean(axis=1)
+        else:
+            new_data[:,i] = data[:,i*interval:].mean(axis=1)
+
+    return new_data
+
 
 
 if opt.algorithm == "orig_cond_wgan_gp":
@@ -142,6 +162,7 @@ with torch.no_grad():
         gen_features = gen_features.squeeze()
 
         tmp = np.mean(gen_features.numpy(), axis=2)
+        tmp = interval_avg(tmp, opt.avg_interval)
 
         for i in range(6):
             plt.subplot(6, 2, i + 1)
@@ -176,6 +197,8 @@ data = np.concatenate([acc_features, gyro_features], axis=3)
 data = np.squeeze(data)
 data = np.mean(data, axis=0)
 tmp = np.hsplit(data, 6)
+tmp = np.array(tmp)
+tmp = interval_avg(tmp, opt.avg_interval)
 
 for i in range(6):
     plt.subplot(6, 2, 6 + i + 1)
@@ -187,4 +210,6 @@ np.save(
     f"UCI_HAR/gen_data/{'non_iid' if opt.non_iid else 'iid'}_{opt.algorithm}",
     gen_features.numpy(),
 )
-np.save("UCI_HAR/gen_data/labels", labels.numpy())
+if type(labels) != np.ndarray:
+    labels = labels.numpy()
+np.save("UCI_HAR/gen_data/labels", labels)
