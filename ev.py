@@ -108,7 +108,9 @@ device = torch.device("cuda" if cuda else "cpu")
 Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if cuda else torch.LongTensor
 
-
+iid_labels = 500
+non_iid_labels = 500
+ratio = 16
 
 
 def get_generator(non_iid, algorithm):
@@ -182,11 +184,11 @@ def gen_blended_features(al, non_iid, X_train, Y_train):
         )
         gen_x = np.squeeze(gen_x)
         gen_x = np.concatenate(np.moveaxis(gen_x, 2, 0), axis=1)
-
     if non_iid == "iid":
-        gen_labels = [i for i in range(6) for _ in range(300)]
+        gen_labels = [i for i in range(6) for _ in range(iid_labels)]
     else:
-        gen_labels = [i for i in range(6) for _ in range(200)]
+        gen_labels = [i for i in range(6) for _ in range(non_iid_labels)]
+    
     gen_data = gen_fake_features(al, torch.tensor(gen_labels))
 
     gen_data = np.squeeze(gen_data.numpy())
@@ -195,10 +197,11 @@ def gen_blended_features(al, non_iid, X_train, Y_train):
     if non_iid == "iid":
         gen_x = gen_data
         gen_y = gen_labels
+    '''
     else:
         gen_x = np.concatenate([gen_x, gen_data], axis=0)
         gen_y = np.concatenate([gen_y, gen_labels], axis=0)
-    
+    '''
     X_train = np.concatenate([X_train, gen_x], axis=0)
     Y_train = np.concatenate([Y_train, gen_y], axis=0)
 
@@ -212,10 +215,10 @@ def gen_blended_features(al, non_iid, X_train, Y_train):
 # def evaluate_all_algorithms():
 
 params = {
-    "max_depth": [10, 20, 30],
-    "n_estimators": [200, 225, 250],
-    "min_samples_leaf": [2],
-    "min_samples_split": [2],
+    "max_depth": [6, 8, 10],
+    "n_estimators": [50, 100, 150],
+    "min_samples_leaf": [8],
+    "min_samples_split": [8],
 }
 
 scoring = ["f1_weighted", "accuracy", "f1_macro"]
@@ -227,9 +230,9 @@ writer = csv.writer(result_f)
 writer.writerow(["algorithm", "f1_weighted", "accuracy", "f1_macro"])
 
 
-for non_iid in ["iid", "non_iid"]:
+for non_iid in ["non_iid"]:
     
-    for al in ["mdmcgan", "cond_wgan_gp", "orig_cond_wgan_gp"]:
+    for al in ["mdmcgan", "orig_cond_wgan_gp", "cond_wgan_gp"]:
         generator = None
         generators = []
 
@@ -242,12 +245,12 @@ for non_iid in ["iid", "non_iid"]:
 
         if non_iid == "non_iid":
             acc_idx = np.where((labels >= 0) & (labels <= 2))[0]
-            delete_acc_idx = np.random.choice(acc_idx, size=19 * len(acc_idx) // 20, replace=False)
+            delete_acc_idx = np.random.choice(acc_idx, size= ratio * len(acc_idx) // 20, replace=False)
             delete_acc_y = labels[delete_acc_idx]
             gyro_for_deleted_acc = gyro_features[delete_acc_idx]
 
             gyro_idx = np.where((labels >= 3) & (labels <= 5))[0]
-            delete_gyro_idx = np.random.choice(gyro_idx, size=19 * len(gyro_idx) // 20, replace=False)
+            delete_gyro_idx = np.random.choice(gyro_idx, size= ratio * len(gyro_idx) // 20, replace=False)
             delete_gyro_y = labels[delete_gyro_idx]
             acc_for_deleted_gyro = acc_features[delete_gyro_idx]
 
@@ -262,7 +265,7 @@ for non_iid in ["iid", "non_iid"]:
             remain_x = np.concatenate(np.moveaxis(remain_x, 2, 0), axis=1)
 
             X_train, X_test, Y_train, Y_test = train_test_split(
-                remain_x, remain_y, test_size=0.2, random_state=0
+                remain_x, remain_y, test_size=0.35, random_state=0
             )
         if non_iid == "iid":
             X = np.concatenate([acc_features, gyro_features], axis = 3)
