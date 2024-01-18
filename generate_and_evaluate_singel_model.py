@@ -1,17 +1,26 @@
 import argparse
 import numpy as np
+import csv
+import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.neighbors import KNeighborsClassifier
+
+from sklearn.metrics import f1_score, accuracy_score
+
 
 import argparse
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
+import pandas as pd
+import numpy as np
+
 
 from models.mdmcgan import Generator as mdmcgan_gen
-from models.cond_wgan_gp import Generator as cond_wgan_gp_gens
+from models.cond_wgan_gp import Generator as cond_wgan_gp_gen
 
 
 parser = argparse.ArgumentParser()
@@ -110,126 +119,344 @@ device = torch.device("cuda" if cuda else "cpu")
 Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if cuda else torch.LongTensor
 
+generator = None
+generators = []
 
-if opt.algorithm == "orig_cond_wgan_gp":
-    generators = []
-    for i in range(opt.num_modalities):
-        generators.append(cond_wgan_gp_gen(opt))
-        generators[i].load_state_dict(
+
+processed_folder = "UCI_HAR/processed_data"
+filtered_folder = "UCI_HAR/filtered_data"
+
+labels = np.load(f"{processed_folder}/labels.npy")
+acc_features = np.load(f"{processed_folder}/acc_features.npy")
+gyro_features = np.load(f"{processed_folder}/gyro_features.npy")
+
+acc_idx = np.where((labels >= 0) & (labels <= 2))[0]
+delete_acc_idx = np.random.choice(acc_idx, size=5 * len(acc_idx) // 6, replace=False)
+delete_acc_y = labels[delete_acc_idx]
+gyro_for_deleted_acc = gyro_features[delete_acc_idx]
+
+
+gyro_idx = np.where((labels >= 3) & (labels <= 5))[0]
+delete_gyro_idx = np.random.choice(gyro_idx, size=5 * len(gyro_idx) // 6, replace=False)
+delete_gyro_y = labels[delete_gyro_idx]
+acc_for_deleted_gyro = acc_features[delete_gyro_idx]
+
+
+removed_idx = np.unique(np.concatenate((delete_acc_idx, delete_gyro_idx), 0))
+remain_y = np.delete(labels, removed_idx, axis=0)
+remain_acc = np.delete(acc_features, removed_idx, axis=0)
+remain_gyro = np.delete(gyro_features, removed_idx, axis=0)
+
+remain_x = np.concatenate([remain_acc, remain_gyro], axis=3)
+remain_x = np.squeeze(remain_x)
+remain_x = np.concatenate(np.moveaxis(remain_x, 2, 0), axis=1)
+
+
+X_train, X_test, Y_train, Y_test = train_test_split(
+    remain_x, remain_y, test_size=0.2, random_state=0
+)
+
+
+def get_generator(non_iid, algorithm):
+    if algorithm == "orig_cond_wgan_gp":
+        cur_generators = []
+        for i in range(opt.num_modalities):
+            generators.append(cond_wgan_gp_gen(opt))
+            generators[i].load_state_dict(
+                torch.load(
+                    f"generator/{non_iid}_{algorithm}_{i}",
+                    map_location=torch.device("cpu"),
+                )
+            )
+
+        generators = cur_generators
+    else:
+        cur_generator = (
+            mdmcgan_gen(opt) if algorithm == "mdmcgan" else cond_wgan_gp_gen(opt)
+        )
+        cur_generator.load_state_dict(
             torch.load(
-                f"generator/{'non_iid' if opt.non_iid else 'iid'}_{opt.algorithm}_{i}"
+                f"generator/{non_iid}_{algorithm}",
+                map_location=torch.device("cpu"),
             )
         )
-else:
-    generator = (
-        mdmcgan_gen(opt) if opt.algorithm == "mdmcgan" else cond_wgan_gp_gen(opt)
-    )
-    generator.load_state_dict(
-        torch.load(f"generator/{'non_iid' if opt.non_iid else 'iid'}_{opt.algorithm}")
-    )
-
-gen_label = 0
-
-desired_ratios = [1 / 6 for _ in range(6)]
-# desired_ratios = [1 if i == gen_label else 0 for i in range(6)]
-total_samples = 6 * 10
-counts = [int(ratio * total_samples) for ratio in desired_ratios]
+        generator = cur_generator
 
 
-z = Tensor(np.random.normal(0, 1, (total_samples, opt.latent_dim)))
-labels = torch.cat([torch.full((count,), i) for i, count in enumerate(counts)])
+def interval_avg(data: np.ndarray, interval=4):
+    # 8개 datapoint로 평균
+    if data.ndim == 3:
+        data = data.reshape((data.shape[0], data.shape[1]))
+    new_points = data.shape[1] // interval
+    if data.shape[1] % interval > 0:
+        new_points += 1
+    new_data = np.zeros((data.shape[0], new_points))
+    for i in range(new_points):
+        if i < new_points - 1:
+            new_data[:, i] = data[:, i * interval : (i + 1) * interval].mean(axis=1)
+        else:
+            new_data[:, i] = data[:, i * interval :].mean(axis=1)
 
-with torch.no_grad():
-    if opt.algorithm == "mdmcgan":
-        modals = []
+    return new_data
+
+
+def draw_feature_plot():
+    if opt.algorithm == "orig_cond_wgan_gp":
+        generators = []
         for i in range(opt.num_modalities):
-            modals.append(torch.full((total_samples,), i))
+            generators.append(cond_wgan_gp_gen(opt))
+            generators[i].load_state_dict(
+                torch.load(
+                    f"generator/{'non_iid' if opt.non_iid else 'iid'}_{opt.algorithm}_{i}",
+                    map_location=torch.device("cpu"),
+                )
+            )
+        else:
+            generator = (
+                mdmcgan_gen(opt)
+                if opt.algorithm == "mdmcgan"
+                else cond_wgan_gp_gen(opt)
+            )
+            generator.load_state_dict(
+                torch.load(
+                    f"generator/{'non_iid' if opt.non_iid else 'iid'}_{opt.algorithm}",
+                    map_location=torch.device("cpu"),
+                )
+            )
 
-        gen_features_list = []
-        for cur_modal in modals:
-            gen_features_list.append(generator(z, labels, cur_modal))
+    cur_gen_label = 2
 
-        gen_features = torch.cat(gen_features_list, dim=3)
+    labels = torch.tensor([cur_gen_label for _ in range(10)])
+    gen_features = gen_fake_features(opt.algorithm, labels)
 
-    elif opt.algorithm == "cond_wgan_gp":
-        gen_features = generator(z, labels)
-        gen_copy = gen_features.clone().detach()
-        gen_features = torch.cat([gen_features, gen_copy], dim=3)
-    else:
-        gen_features_list = []
-        for i in range(opt.num_modalities):
-            gen_features_list.append(generators[i](z, labels))
-        gen_features = torch.cat(gen_features_list, dim=3)
+    tmp = np.mean(gen_features.numpy(), axis=0)
+    tmp = tmp.swapaxes(0, 1)
+    tmp = interval_avg(tmp, opt.avg_interval)
+
+    for i in range(6):
+        plt.subplot(6, 2, i + 1)
+        plt.plot(tmp[i])
+        plt.title(f"gen_{i}")
+
+    processed_folder = "UCI_HAR/processed_data"
+
+    labels = np.load(f"{processed_folder}/labels.npy")
+    acc_features = np.load(f"{processed_folder}/acc_features.npy")
+    gyro_features = np.load(f"{processed_folder}/gyro_features.npy")
+
+    gen_label_idx = np.where(labels == cur_gen_label)[0]
+    # print(gen_label_idx)
+    # exit()
+
+    labels_filtered = labels[gen_label_idx]
+    acc_features = acc_features[gen_label_idx]
+    gyro_features = gyro_features[gen_label_idx]
+
+    data = np.concatenate([acc_features, gyro_features], axis=3)
+    data = np.squeeze(data)
+    data = np.mean(data, axis=0)
+    tmp = np.hsplit(data, 6)
+    tmp = np.array(tmp)
+    tmp = interval_avg(tmp, opt.avg_interval)
+
+    for i in range(6):
+        plt.subplot(6, 2, 6 + i + 1)
+        plt.plot(tmp[i])
+        plt.title(f"real_{i}")
+
+    plt.show()
 
 
-processed_folder = "./UCI_HAR/processed_data"
+def gen_fake_features(al, labels):
+    z = Tensor(np.random.normal(0, 1, (len(labels), opt.latent_dim)))
 
-y = np.load(f"{processed_folder}/labels.npy")
+    with torch.no_grad():
+        if al == "mdmcgan":
+            modals = []
+            for i in range(opt.num_modalities):
+                modals.append(torch.full((len(labels),), i))
 
-x_acc = np.load(f"{processed_folder}/acc_features.npy")
-x_acc = np.squeeze(x_acc)
+            gen_features_list = []
+            for cur_modal in modals:
+                gen_features_list.append(generator(z, labels, cur_modal))
 
-x_gyro = np.load(f"{processed_folder}/gyro_features.npy")
-x_gyro = np.squeeze(x_gyro)
+            gen_features = torch.cat(gen_features_list, dim=3)
 
-x = np.concatenate([x_acc, x_gyro], axis=2)
+        elif al == "cond_wgan_gp":
+            gen_features = generator(z, labels)
+            gen_copy = gen_features.clone().detach()
+            gen_features = torch.cat([gen_features, gen_copy], dim=3)
+        else:
+            gen_features_list = []
+            for i in range(opt.num_modalities):
+                gen_features_list.append(generators[i](z, labels))
+            gen_features = torch.cat(gen_features_list, dim=3)
+    return gen_features
 
 
-X_train, X_test, Y_train, Y_test = train_test_split(x, y, test_size=0.1, random_state=0)
+def gen_blended_features(al, non_iid, X_train, Y_train):
+    gen_acc = gen_fake_features(al, torch.from_numpy(delete_acc_y))
+    gen_acc = np.split(gen_acc.numpy(), 2, axis=3)[0]
 
+    gen_gyro = gen_fake_features(al, torch.from_numpy(delete_gyro_y))
+    gen_gyro = np.split(gen_gyro.numpy(), 2, axis=3)[1]
 
-gen_features = gen_features.numpy()
-gen_features = np.squeeze(gen_features)
+    gen_y = np.concatenate([delete_acc_y, delete_gyro_y], axis=0)
 
-
-for i in range(6):
-    gen_label_idx = np.where(labels == i)[0]
-    cur_gen_features = gen_features[gen_label_idx]
-
-    real_label_idx = np.where(Y_train == i)[0]
-    selected_idx = np.random.choice(
-        real_label_idx, cur_gen_features.shape[0], replace=False
-    )
-    modifying_items = X_train[selected_idx]
-
-    X_train = np.delete(X_train, selected_idx, axis=0)
-    Y_train = np.delete(Y_train, selected_idx, axis=0)
-
-    gen_split = np.split(cur_gen_features, 2, axis=2)
-    real_split = np.split(modifying_items, 2, axis=2)
-
-    new_x = np.concatenate(
+    gen_x = np.concatenate(
         [
-            np.concatenate([gen_split[0], real_split[1]], axis=2),
-            np.concatenate([gen_split[1], real_split[0]], axis=2),
+            np.concatenate([gen_acc, gyro_for_deleted_acc], axis=3),
+            np.concatenate([acc_for_deleted_gyro, gen_gyro], axis=3),
         ],
         axis=0,
     )
+    gen_x = np.squeeze(gen_x)
+    gen_x = np.concatenate(np.moveaxis(gen_x, 2, 0), axis=1)
 
-    X_train = np.concatenate([X_train, new_x], axis=0)
-    Y_train = np.concatenate([Y_train, [i for _ in range(len(new_x))]], axis=0)
+    # if non_iid == "iid":
+    gen_labels = [i for i in range(6) for _ in range(500)]
+    gen_data = gen_fake_features(al, torch.tensor(gen_labels))
+
+    gen_data = np.squeeze(gen_data.numpy())
+    gen_data = np.concatenate(np.moveaxis(gen_data, 2, 0), axis=1)
+
+    gen_x = np.concatenate([gen_x, gen_data], axis=0)
+    gen_y = np.concatenate([gen_y, gen_labels], axis=0)
+
+    X_train = np.concatenate([X_train, gen_x], axis=0)
+    Y_train = np.concatenate([Y_train, gen_y], axis=0)
+
+    shuffler = np.random.permutation(len(X_train))
+    X_train = X_train[shuffler]
+    Y_train = Y_train[shuffler]
+
+    return X_train, Y_train
 
 
-shuffler = np.random.permutation(len(X_train))
-X_train = X_train[shuffler]
-Y_train = Y_train[shuffler]
-
-X_train = np.concatenate(np.moveaxis(X_train, 2, 0), axis=1)
-X_test = np.concatenate(np.moveaxis(X_test, 2, 0), axis=1)
-
+# def evaluate_all_algorithms():
 
 params = {
-    "max_depth": [6, 8, 10],
-    "n_estimators": [50, 100, 200],
-    "min_samples_leaf": [8, 12],
-    "min_samples_split": [8, 12],
+    "max_depth": [200, 250, 300],
+    "n_estimators": [200, 250],
+    "min_samples_leaf": [2],
+    "min_samples_split": [2],
 }
 
-rf_clf = RandomForestClassifier(random_state=0, n_jobs=-1)
-grid_cv = GridSearchCV(
-    rf_clf, param_grid=params, cv=2, n_jobs=-1, scoring="f1_weighted"
-)
-grid_cv.fit(X_train, Y_train)
+scoring = ["f1_weighted", "accuracy", "f1_macro"]
 
-print(grid_cv.best_params_)
-print(grid_cv.score(X_test, Y_test))
+result_f = open(
+    f"score_{''.join([str(i) for i in params['max_depth']])}_result.csv", "w"
+)
+writer = csv.writer(result_f)
+writer.writerow(["algorithm", "f1_weighted", "accuracy", "f1_macro"])
+
+
+# al = "mdmcgan"
+# non_iid = "iid"
+# # non_iid = "non_iid"
+
+# generator = mdmcgan_gen(opt)
+# generator.load_state_dict(
+#     torch.load(
+#         f"generator/{non_iid}_{al}",
+#         map_location=torch.device("cpu"),
+#     )
+# )
+
+# new_train_x, new_train_y = gen_blended_features(al, non_iid, X_train, Y_train)
+
+
+# clf = RandomForestClassifier(random_state=0, n_jobs=-1)
+
+# # params = {
+# #     "n_neighbors": [5, 7, 10],
+# #     "weights": ["uniform", "distance"],
+# #     "metric": ["euclidean", "manhattan", "minkowski"],
+# # }
+# # knn = KNeighborsClassifier(n_neighbors=5, n_jobs=-1)
+# # clf = RandomForestClassifier(random_state=0, n_jobs=-1)
+
+# grid_cv = GridSearchCV(
+#     clf,
+#     param_grid=params,
+#     cv=6,
+#     n_jobs=-1,
+#     scoring=scoring,
+#     refit="accuracy",
+# )
+# grid_cv.fit(new_train_x, new_train_y)
+
+# # predicted = grid.predict(X_test)
+# predicted = grid_cv.predict(X_test)
+
+
+# f1_weighted = round(f1_score(Y_test, predicted, average="weighted"), 4)
+# f1_macro = round(f1_score(Y_test, predicted, average="macro"), 4)
+# accuracy = round(accuracy_score(Y_test, predicted), 4)
+
+# print(f"{f1_weighted:.4f} {f1_macro:.4f} {accuracy:.4f}")
+# print(grid_cv.score(X_test, Y_test))
+# print(grid_cv.best_params_)
+
+
+for non_iid in ["iid", "non_iid"]:
+    for al in ["mdmcgan", "cond_wgan_gp", "orig_cond_wgan_gp"]:
+        # for non_iid in ["iid", "non_iid"]:
+        #     for al in ["mdmcgan"]:
+        if al == "orig_cond_wgan_gp":
+            # generators = []
+            for i in range(opt.num_modalities):
+                generators.append(cond_wgan_gp_gen(opt))
+                generators[i].load_state_dict(
+                    torch.load(
+                        f"generator/{non_iid}_{al}_{i}",
+                        map_location=torch.device("cpu"),
+                    )
+                )
+        else:
+            generator = mdmcgan_gen(opt) if al == "mdmcgan" else cond_wgan_gp_gen(opt)
+            generator.load_state_dict(
+                torch.load(
+                    f"generator/{non_iid}_{al}",
+                    map_location=torch.device("cpu"),
+                )
+            )
+
+        print(f"{non_iid}_{al}")
+
+        new_train_x, new_train_y = gen_blended_features(al, non_iid, X_train, Y_train)
+
+        rf_clf = RandomForestClassifier(random_state=0, n_jobs=-1)
+        grid_cv = GridSearchCV(
+            rf_clf,
+            param_grid=params,
+            cv=6,
+            n_jobs=-1,
+            scoring=scoring,
+            refit="accuracy",
+        )
+        grid_cv.fit(new_train_x, new_train_y)
+
+        # predicted = grid.predict(X_test)
+        predicted = grid_cv.predict(X_test)
+
+        f1_weighted = round(f1_score(Y_test, predicted, average="weighted"), 4)
+        f1_macro = round(f1_score(Y_test, predicted, average="macro"), 4)
+        accuracy = round(accuracy_score(Y_test, predicted), 4)
+
+        # tmp = [f"{non_iid}_{al}"]
+        for score in scoring:
+            print(
+                f"{grid_cv.cv_results_['mean_test_' + score][grid_cv.best_index_]:.4f}"
+            )
+
+        print(f"{f1_weighted:.4f} {f1_macro:.4f} {accuracy:.4f}")
+        print(grid_cv.score(X_test, Y_test))
+        print(grid_cv.best_params_)
+
+        writer.writerow([f"{non_iid}_{al}", f1_weighted, f1_macro, accuracy])
+        result_f.flush()
+
+
+# draw_feature_plot()
+# evaluate_all_algorithms()
