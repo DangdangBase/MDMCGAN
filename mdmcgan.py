@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from models.mdmcgan import Generator, Discriminator
 from train_params import opt
 
-from utils import count_parameters
+from utils import count_parameters, setup_UCIHAR_dataloader
 
 
 os.makedirs("generator", exist_ok=True)
@@ -19,6 +19,8 @@ os.makedirs("gen_features/mdmcgan", exist_ok=True)
 cuda = True if torch.cuda.is_available() else False
 device = torch.device("cuda" if cuda else "cpu")
 
+data_size = np.prod(opt.feature_shape)
+non_iid_str = "non_iid" if opt.non_iid else "iid"
 
 # Loss weight for gradient penalty
 lambda_gp = 10
@@ -39,28 +41,13 @@ if cuda:
 # Configure data loader
 
 if opt.dataset == "uci_har":
-    uci_har_folder = f"UCI_HAR/{'filtered_data' if opt.non_iid else 'processed_data'}"
-    arr = ["acc", "gyro"]
-
-    labels = torch.from_numpy(np.load(f"{uci_har_folder}/labels.npy"))
-
-    dataloader = []
-
-    for idx, modal in enumerate(arr):
-        features = torch.from_numpy(np.load(f"{uci_har_folder}/{modal}_features.npy"))
-        modal = torch.tensor([idx] * len(features))
-
-        current_dataset = TensorDataset(features, labels, modal)
-        dataset_size = len(current_dataset)
-
-        data_size = torch.flatten(features[0]).size(0)
-
-        train_dataloader = DataLoader(
-            dataset=current_dataset, batch_size=opt.batch_size, shuffle=True
-        )
-
-        dataloader.append(train_dataloader)
-
+    dataloader = setup_UCIHAR_dataloader(
+        "mdmcgan",
+        opt.non_iid,
+        opt.batch_size,
+        remove_labels_num=opt.remove_labels_num,
+        filter_ratio=opt.filter_ratio,
+    )
 else:
     raise NotImplementedError
 
@@ -112,7 +99,7 @@ def compute_gradient_penalty(D, real_samples, fake_samples, labels, modal):
 #  Training
 # ----------
 
-result_f = open(f"{'non_iid' if opt.non_iid else 'iid'}_mdmcgan_result.csv", "w")
+result_f = open(f"{non_iid_str}_mdmcgan_result.csv", "w")
 writer = csv.writer(result_f)
 writer.writerow(["Epoch", "Batch", "D loss", "G loss", "D workload", "G workload"])
 
@@ -252,5 +239,6 @@ result_f.close()
 
 # save model
 torch.save(
-    generator.state_dict(), f"generator/{'non_iid' if opt.non_iid else 'iid'}_mdmcgan"
+    generator.state_dict(),
+    f"generator/{non_iid_str}_{opt.remove_labels_num}_{opt.filter_ratio}_mdmcgan",
 )

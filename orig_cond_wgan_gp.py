@@ -8,7 +8,7 @@ import torch.autograd as autograd
 from torch.utils.data import DataLoader, TensorDataset
 
 from models.cond_wgan_gp import Generator, Discriminator
-from utils import count_parameters
+from utils import count_parameters, setup_UCIHAR_dataloader
 from train_params import opt
 
 os.makedirs("generator", exist_ok=True)
@@ -18,6 +18,8 @@ os.makedirs("gen_features/cond_wgan_gp", exist_ok=True)
 cuda = True if torch.cuda.is_available() else False
 device = torch.device("cuda" if cuda else "cpu")
 
+data_size = np.prod(opt.feature_shape)
+non_iid_str = "non_iid" if opt.non_iid else "iid"
 
 # Loss weight for gradient penalty
 lambda_gp = 10
@@ -42,27 +44,13 @@ if cuda:
 # Configure data loader
 
 if opt.dataset == "uci_har":
-    uci_har_folder = f"UCI_HAR/{'filtered_data' if opt.non_iid else 'processed_data'}"
-    arr = ["acc", "gyro"]
-
-    labels = torch.from_numpy(np.load(f"{uci_har_folder}/labels.npy"))
-
-    dataloader = []
-
-    for modal in arr:
-        features = torch.from_numpy(np.load(f"{uci_har_folder}/{modal}_features.npy"))
-
-        current_dataset = TensorDataset(features, labels)
-        dataset_size = len(current_dataset)
-
-        data_size = torch.flatten(features[0]).size(0)
-
-        train_dataloader = DataLoader(
-            dataset=current_dataset, batch_size=opt.batch_size, shuffle=True
-        )
-
-        dataloader.append(train_dataloader)
-
+    dataloader = setup_UCIHAR_dataloader(
+        "orig_cond_wgan_gp",
+        opt.non_iid,
+        opt.batch_size,
+        remove_labels_num=opt.remove_labels_num,
+        filter_ratio=opt.filter_ratio,
+    )
 else:
     raise NotImplementedError
 
@@ -116,7 +104,8 @@ def compute_gradient_penalty(D, real_samples, fake_samples, labels):
 # ----------
 
 result_f = open(
-    f"{'non_iid' if opt.non_iid else 'iid'}_orig_cond_wgan_gp_result.csv", "w"
+    f"{non_iid_str}_{opt.remove_labels_num}_{opt.filter_ratio}_orig_cond_wgan_gp_result.csv",
+    "w",
 )
 writer = csv.writer(result_f)
 writer.writerow(["Epoch", "Batch", "D loss", "G loss", "D workload", "G workload"])
@@ -230,7 +219,7 @@ for epoch in range(opt.n_epochs):
             for i in range(opt.num_modalities):
                 torch.save(
                     generators[i].state_dict(),
-                    f"generator/{'non_iid' if opt.non_iid else 'iid'}_orig_cond_wgan_gp_{i}",
+                    f"generator/{non_iid_str}_{opt.remove_labels_num}_{opt.filter_ratio}_orig_cond_wgan_gp_{i}",
                 )
 
 
@@ -240,5 +229,5 @@ result_f.close()
 for i in range(opt.num_modalities):
     torch.save(
         generators[i].state_dict(),
-        f"generator/{'non_iid' if opt.non_iid else 'iid'}_orig_cond_wgan_gp_{i}",
+        f"generator/{non_iid_str}_{opt.remove_labels_num}_{opt.filter_ratio}_orig_cond_wgan_gp_{i}",
     )
