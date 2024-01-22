@@ -2,7 +2,7 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    "--n_epochs", type=int, default=500, help="number of epochs of training"
+    "--n_epochs", type=int, default=2000, help="number of epochs of training"
 )
 parser.add_argument("--batch_size", type=int, default=64, help="size of the batches")
 parser.add_argument("--lr", type=float, default=0.00005, help="adam: learning rate")
@@ -73,7 +73,7 @@ parser.add_argument(
 )
 parser.set_defaults(non_iid=True)
 parser.add_argument("--remove_labels_num", type=int, default=3, choices=[1, 2, 3])
-parser.add_argument("--filter_ratio", type=float, default=0.2)
+parser.add_argument("--filter_ratio", type=float, default=0.9)
 opt = parser.parse_args()
 
 opt.feature_shape = (opt.channels, opt.feature_size, opt.feature_num)

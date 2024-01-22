@@ -113,7 +113,7 @@ for epoch in range(opt.n_epochs):
     for dl in dataloader:
         it_list.append(iter(dl))
 
-    batch_num = len(it_list[0])
+    batch_num = 20
 
     for i in range(batch_num):
         is_critic = i % opt.n_critic == 0
@@ -172,8 +172,7 @@ for epoch in range(opt.n_epochs):
                 + torch.mean(fake_label**2)
                 + torch.mean(fake_modality**2)
                 + torch.mean(fake_validity**2)
-                + lambda_gp * gradient_penalty
-            )
+            )/4 + lambda_gp * gradient_penalty
 
             d_dis_loss.backward()
             optimizers_D[j].step()
@@ -182,7 +181,7 @@ for epoch in range(opt.n_epochs):
                 # -----------------
                 # Collect Generator loss
                 # -----------------
-
+                z = Tensor(np.random.normal(0, 1, (features.shape[0], opt.latent_dim)))
                 fake_features = generator(z, labels, modal)
                 fake_validity = discriminators[j](fake_features, labels, modal)
                 g_losses[j] = torch.mean((fake_validity - 1) ** 2)

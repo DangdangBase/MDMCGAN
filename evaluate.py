@@ -94,7 +94,7 @@ parser.add_argument(
 )
 parser.set_defaults(non_iid=True)
 parser.add_argument("--remove_labels_num", type=int, default=3, choices=[1, 2, 3])
-parser.add_argument("--filter_ratio", type=float, default=0.2)
+parser.add_argument("--filter_ratio", type=float, default=0.9)
 
 opt = parser.parse_args()
 
@@ -125,7 +125,7 @@ def get_generator(algorithm, non_iid):
             cur_generators.append(cond_wgan_gp_gen(opt))
             cur_generators[i].load_state_dict(
                 torch.load(
-                    f"generator/{non_iid}_{algorithm}_{i}",
+                    f"generator/{non_iid}_{opt.remove_labels_num}_{opt.filter_ratio}_{algorithm}_{i}",
                     map_location=torch.device("cpu"),
                 )
             )
@@ -137,7 +137,7 @@ def get_generator(algorithm, non_iid):
         )
         cur_generator.load_state_dict(
             torch.load(
-                f"generator/{non_iid}_{algorithm}",
+                f"generator/{non_iid}_{opt.remove_labels_num}_{opt.filter_ratio}_{algorithm}",
                 map_location=torch.device("cpu"),
             )
         )
@@ -186,10 +186,11 @@ def gen_blended_features(algorithm, non_iid_str):
     Y_train = data["Y_train"]
     Y_test = data["Y_test"]
 
-    y_remain_gyro = data["y_remain_gyro"]
-    gyro_remain = data["gyro_remain"]
-    y_remain_acc = data["y_remain_acc"]
-    acc_remain = data["acc_remain"]
+    if non_iid_str == "non_iid":
+        y_remain_gyro = data["y_remain_gyro"]
+        gyro_remain = data["gyro_remain"]
+        y_remain_acc = data["y_remain_acc"]
+        acc_remain = data["acc_remain"]
 
     data.close()
 
@@ -209,7 +210,8 @@ def gen_blended_features(algorithm, non_iid_str):
             ],
             axis=0,
         )
-        gen_x = flatten_features(gen_x)
+        gen_x = np.squeeze(gen_x)
+        gen_x = np.concatenate(np.moveaxis(gen_x, 2, 0), axis=1)
 
     gen_labels = [
         i
@@ -224,8 +226,8 @@ def gen_blended_features(algorithm, non_iid_str):
         gen_x = gen_data
         gen_y = gen_labels
 
-    X_train = np.concatenate([X_train, gen_x], axis=0)
-    Y_train = np.concatenate([Y_train, gen_y], axis=0)
+        X_train = np.concatenate([X_train, gen_x], axis=0)
+        Y_train = np.concatenate([Y_train, gen_y], axis=0)
 
     shuffler = np.random.permutation(len(X_train))
     X_train = X_train[shuffler]
@@ -235,7 +237,7 @@ def gen_blended_features(algorithm, non_iid_str):
 
 
 params = {
-    "max_depth": [6, 8, 10],
+    "max_depth": [30, 50, 70],
     "n_estimators": [50, 100, 200],
     "min_samples_leaf": [8],
     "min_samples_split": [8],
@@ -248,7 +250,7 @@ writer = csv.writer(result_f)
 writer.writerow(["algorithm", "f1_weighted", "accuracy", "f1_macro"])
 
 
-for non_iid_str in ["non_iid"]:
+for non_iid_str in [ "non_iid"]:
     for algorithm in ["mdmcgan", "orig_cond_wgan_gp", "cond_wgan_gp"]:
         generator = None
         generators = []

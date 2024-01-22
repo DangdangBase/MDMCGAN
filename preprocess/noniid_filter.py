@@ -8,7 +8,7 @@ parser.add_argument("--non_iid", action="store_true")
 parser.add_argument("--no-non_iid", dest="non_iid", action="store_false")
 parser.set_defaults(non_iid=True)
 parser.add_argument("--remove_labels_num", type=int, default=3, choices=[1, 2, 3])
-parser.add_argument("--filter_ratio", type=float, default=0.2)
+parser.add_argument("--filter_ratio", type=float, default=0.9)
 opt = parser.parse_args()
 
 
@@ -49,7 +49,7 @@ def filter_processed_data(non_iid=True, **kwargs):
         remain_x = np.delete(orig_x, removed_idx, axis=0)
 
         X_train, X_test, Y_train, Y_test = train_test_split(
-            remain_x, remain_y, test_size=0.2, random_state=0
+            remain_x, remain_y, test_size=0.3, random_state=0
         )
 
         np.savez(
@@ -68,7 +68,7 @@ def filter_processed_data(non_iid=True, **kwargs):
         orig_y = labels
 
         X_train, X_test, Y_train, Y_test = train_test_split(
-            orig_x, orig_y, test_size=0.35, random_state=0
+            orig_x, orig_y, test_size=0.3, random_state=0
         )
 
         np.savez(
