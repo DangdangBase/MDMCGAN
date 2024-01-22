@@ -73,7 +73,7 @@ parser.add_argument(
 )
 parser.set_defaults(non_iid=True)
 parser.add_argument("--remove_labels_num", type=int, default=3, choices=[1, 2, 3])
-parser.add_argument("--filter_ratio", type=float, default=0.9)
+parser.add_argument("--filter_ratio", type=float, default=0.8)
 opt = parser.parse_args()
 
 opt.feature_shape = (opt.channels, opt.feature_size, opt.feature_num)

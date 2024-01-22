@@ -94,7 +94,7 @@ parser.add_argument(
 )
 parser.set_defaults(non_iid=True)
 parser.add_argument("--remove_labels_num", type=int, default=3, choices=[1, 2, 3])
-parser.add_argument("--filter_ratio", type=float, default=0.9)
+parser.add_argument("--filter_ratio", type=float, default=0.8)
 
 opt = parser.parse_args()
 
@@ -109,7 +109,7 @@ LongTensor = torch.cuda.LongTensor if cuda else torch.LongTensor
 
 iid_labels = 500
 non_iid_labels = 500
-ratio = 16
+ratio = 18
 
 
 def flatten_features(np_arr):
@@ -210,8 +210,7 @@ def gen_blended_features(algorithm, non_iid_str):
             ],
             axis=0,
         )
-        gen_x = np.squeeze(gen_x)
-        gen_x = np.concatenate(np.moveaxis(gen_x, 2, 0), axis=1)
+        gen_x = flatten_features(gen_x)
 
     gen_labels = [
         i
@@ -226,8 +225,8 @@ def gen_blended_features(algorithm, non_iid_str):
         gen_x = gen_data
         gen_y = gen_labels
 
-        X_train = np.concatenate([X_train, gen_x], axis=0)
-        Y_train = np.concatenate([Y_train, gen_y], axis=0)
+    X_train = np.concatenate([X_train, gen_x, gen_data], axis=0)
+    Y_train = np.concatenate([Y_train, gen_y, gen_labels], axis=0)
 
     shuffler = np.random.permutation(len(X_train))
     X_train = X_train[shuffler]
@@ -237,7 +236,7 @@ def gen_blended_features(algorithm, non_iid_str):
 
 
 params = {
-    "max_depth": [30, 50, 70],
+    "max_depth": [50, 75, 100],
     "n_estimators": [50, 100, 200],
     "min_samples_leaf": [8],
     "min_samples_split": [8],
