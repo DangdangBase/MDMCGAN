@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import f1_score, accuracy_score
+from sklearn.metrics import f1_score, accuracy_score, roc_auc_score
 import torch
 
 
@@ -236,8 +236,8 @@ def gen_blended_features(algorithm, non_iid_str):
 
 
 params = {
-    "max_depth": [50, 70, 100],
-    "n_estimators": [200, 250, 300],
+    "max_depth": [50],
+    "n_estimators": [300],
     "min_samples_leaf": [8],
     "min_samples_split": [8],
 }
@@ -281,9 +281,21 @@ for non_iid_str in ["non_iid"]:
         f1_macro = round(f1_score(Y_test, predicted, average="macro"), 4)
         accuracy = round(accuracy_score(Y_test, predicted), 4)
 
-        print(f"{f1_weighted:.4f}, {f1_macro:.4f}, {accuracy:.4f}")
+        predicted_prob = grid_cv.predict_proba(X_test)
+        Y_test_onehot = np.eye(6)[Y_test].astype(int)
 
-        writer.writerow([f"{non_iid_str}_{algorithm}", f1_weighted, f1_macro, accuracy])
+        auc = round(
+            roc_auc_score(
+                Y_test_onehot, predicted_prob, average="weighted", multi_class="ovr"
+            ),
+            4,
+        )
+
+        print(f"{f1_weighted}, {f1_macro}, {accuracy}, {auc}")
+
+        writer.writerow(
+            [f"{non_iid_str}_{algorithm}", f1_weighted, f1_macro, accuracy, auc]
+        )
         result_f.flush()
 
 result_f.close()
