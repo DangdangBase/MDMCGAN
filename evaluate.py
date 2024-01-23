@@ -1,12 +1,12 @@
+import os
 import argparse
 import numpy as np
 import csv
 import matplotlib.pyplot as plt
 
-from sklearn.model_selection import train_test_split, GridSearchCV
+
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import f1_score, accuracy_score, roc_auc_score
+from sklearn.metrics import f1_score, accuracy_score, RocCurveDisplay
 import torch
 
 
@@ -100,6 +100,8 @@ opt = parser.parse_args()
 
 opt.feature_shape = (opt.channels, opt.feature_size, opt.feature_num)
 opt.n_classes = 6
+
+os.makedirs("plots", exist_ok=True)
 
 cuda = False
 device = torch.device("cuda" if cuda else "cpu")
@@ -242,6 +244,7 @@ params = {
     "min_samples_split": [8],
 }
 
+algorithms = ["mdmcgan", "orig_cond_wgan_gp", "cond_wgan_gp"]
 scoring = ["f1_weighted", "accuracy", "f1_macro"]
 
 result_f = open(f"score_{opt.remove_labels_num}_{opt.filter_ratio}_result.csv", "w")
@@ -249,8 +252,21 @@ writer = csv.writer(result_f)
 writer.writerow(["algorithm", "f1_weighted", "accuracy", "f1_macro"])
 
 
+clf_list = [
+    RandomForestClassifier(
+        max_depth=50,
+        n_estimators=300,
+        min_samples_leaf=8,
+        min_samples_split=8,
+        random_state=0,
+        n_jobs=-1,
+    )
+    for _ in range(3)
+]
+
+
 for non_iid_str in ["non_iid"]:
-    for algorithm in ["mdmcgan", "orig_cond_wgan_gp", "cond_wgan_gp"]:
+    for i, algorithm in enumerate(algorithms):
         generator = None
         generators = []
 
@@ -263,39 +279,43 @@ for non_iid_str in ["non_iid"]:
 
         X_train, Y_train, X_test, Y_test = gen_blended_features(algorithm, non_iid_str)
 
-        rf_clf = RandomForestClassifier(random_state=0, n_jobs=-1)
-        grid_cv = GridSearchCV(
-            rf_clf,
-            param_grid=params,
-            cv=5,
-            n_jobs=-1,
-            scoring=scoring,
-            refit="accuracy",
-        )
+        clf_list[i].fit(X_train, Y_train)
 
-        grid_cv.fit(X_train, Y_train)
-
-        predicted = grid_cv.predict(X_test)
+        predicted = clf_list[i].predict(X_test)
 
         f1_weighted = round(f1_score(Y_test, predicted, average="weighted"), 4)
         f1_macro = round(f1_score(Y_test, predicted, average="macro"), 4)
         accuracy = round(accuracy_score(Y_test, predicted), 4)
 
-        predicted_prob = grid_cv.predict_proba(X_test)
-        Y_test_onehot = np.eye(6)[Y_test].astype(int)
+        print(f"{f1_weighted}, {f1_macro}, {accuracy}")
 
-        auc = round(
-            roc_auc_score(
-                Y_test_onehot, predicted_prob, average="weighted", multi_class="ovr"
-            ),
-            4,
-        )
-
-        print(f"{f1_weighted}, {f1_macro}, {accuracy}, {auc}")
-
-        writer.writerow(
-            [f"{non_iid_str}_{algorithm}", f1_weighted, f1_macro, accuracy, auc]
-        )
+        writer.writerow([f"{non_iid_str}_{algorithm}", f1_weighted, f1_macro, accuracy])
         result_f.flush()
 
 result_f.close()
+
+
+Y_test_onehot = np.eye(6)[Y_test].astype(int)
+colors = ["blue", "darkorange", "teal"]
+
+for j in range(6):
+    fig = plt.figure(figsize=(8, 8))
+    fig.set_facecolor("white")
+    ax = fig.add_subplot()
+    ax.set_title(f"label {j} vs rest")
+
+    for i, rf_clf in enumerate(clf_list):
+        predicted_prob = clf_list[i].predict_proba(X_test)
+
+        RocCurveDisplay.from_predictions(
+            Y_test_onehot[:, j],
+            predicted_prob[:, j],
+            name=algorithms[i],
+            color=colors[i],
+            ax=ax,
+        )
+
+    ax.plot([0, 1], [0, 1], color="red", label="Chance Level")
+    ax.legend()
+
+    plt.savefig(f"plots/label_{j}.png")
