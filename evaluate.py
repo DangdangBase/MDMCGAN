@@ -94,7 +94,7 @@ parser.add_argument(
 )
 parser.set_defaults(non_iid=True)
 parser.add_argument("--remove_labels_num", type=int, default=3, choices=[1, 2, 3])
-parser.add_argument("--filter_ratio", type=float, default=0.8)
+parser.add_argument("--filter_ratio", type=float, default=0.9)
 
 opt = parser.parse_args()
 
@@ -107,8 +107,8 @@ device = torch.device("cuda" if cuda else "cpu")
 Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if cuda else torch.LongTensor
 
-iid_labels = 500
-non_iid_labels = 500
+iid_labels = 1500
+non_iid_labels = 1500
 ratio = 18
 
 
@@ -236,8 +236,8 @@ def gen_blended_features(algorithm, non_iid_str):
 
 
 params = {
-    "max_depth": [50, 75, 100],
-    "n_estimators": [50, 100, 200],
+    "max_depth": [50, 70, 100],
+    "n_estimators": [200, 250, 300],
     "min_samples_leaf": [8],
     "min_samples_split": [8],
 }
@@ -249,7 +249,7 @@ writer = csv.writer(result_f)
 writer.writerow(["algorithm", "f1_weighted", "accuracy", "f1_macro"])
 
 
-for non_iid_str in [ "non_iid"]:
+for non_iid_str in ["non_iid"]:
     for algorithm in ["mdmcgan", "orig_cond_wgan_gp", "cond_wgan_gp"]:
         generator = None
         generators = []
@@ -281,7 +281,7 @@ for non_iid_str in [ "non_iid"]:
         f1_macro = round(f1_score(Y_test, predicted, average="macro"), 4)
         accuracy = round(accuracy_score(Y_test, predicted), 4)
 
-        print(f"{f1_weighted:.4f} {f1_macro:.4f} {accuracy:.4f}")
+        print(f"{f1_weighted:.4f}, {f1_macro:.4f}, {accuracy:.4f}")
 
         writer.writerow([f"{non_iid_str}_{algorithm}", f1_weighted, f1_macro, accuracy])
         result_f.flush()
