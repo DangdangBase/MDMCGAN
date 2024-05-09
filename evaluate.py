@@ -5,7 +5,10 @@ import csv
 
 import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import f1_score, accuracy_score, RocCurveDisplay
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import f1_score, accuracy_score, roc_auc_score, roc_curve, RocCurveDisplay
+import torch
+
 
 from models.mdmcgan import Generator as mdmcgan_gen
 from models.cond_wgan_gp import Generator as cond_wgan_gp_gen
@@ -200,8 +203,11 @@ for non_iid_str in ["non_iid"]:
 
         print(f"{f1_weighted}, {f1_macro}, {accuracy}")
 
-        writer.writerow([f"{non_iid_str}_{algorithm}", f1_weighted, f1_macro, accuracy])
+        writer.writerow(
+            [f"{non_iid_str}_{algorithm}", f1_weighted, f1_macro, accuracy]
+        )
         result_f.flush()
+
 
 result_f.close()
 

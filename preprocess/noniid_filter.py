@@ -7,7 +7,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--non_iid", action="store_true")
 parser.add_argument("--no-non_iid", dest="non_iid", action="store_false")
 parser.set_defaults(non_iid=True)
-parser.add_argument("--remove_labels_num", type=int, default=3, choices=[1, 2, 3])
+parser.add_argument("--remove_labels_num", type=int, default=3, choices=[1, 2, 3, 5])
 parser.add_argument("--filter_ratio", type=float, default=0.9)
 opt = parser.parse_args()
 
@@ -26,7 +26,7 @@ def filter_processed_data(non_iid=True, **kwargs):
     if non_iid:
         remove_labels_num = kwargs["remove_labels_num"]
         filter_ratio = kwargs["filter_ratio"]
-        assert 1 <= remove_labels_num and remove_labels_num <= 3
+        assert 1 <= remove_labels_num and remove_labels_num <= 5
 
         acc_idx = np.where((labels >= 0) & (labels <= (remove_labels_num - 1)))[0]
         acc_idx_del = np.random.choice(
