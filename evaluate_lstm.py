@@ -7,10 +7,10 @@ import csv
 import tensorflow as tf
 
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout, BatchNormalization
+from tensorflow.keras.layers import LSTM, Dense, Dropout, BatchNormalization, ConvLSTM2D, Flatten, Conv1D, MaxPooling1D, GlobalAveragePooling1D, Reshape
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras import mixed_precision
-from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.optimizers.legacy import Adam
 
 import matplotlib.pyplot as plt
 from sklearn.metrics import f1_score, accuracy_score, roc_auc_score, roc_curve, RocCurveDisplay
@@ -22,7 +22,9 @@ from train_params import opt
 
 os.makedirs("plots", exist_ok=True)
 
-mixed_precision.set_global_policy('mixed_float16')
+mixed_precision.set_global_policy('float32')
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
+
 
 #cuda = torch.cuda.is_available()
 #device = torch.device("cuda" if cuda else "cpu")
@@ -161,13 +163,17 @@ def gen_blended_features(algorithm, non_iid_str):
 # Function to create LSTM model
 def create_lstm_model(input_shape, params):
     model = Sequential([
-        LSTM(params['lstm_units_1'], input_shape=input_shape, return_sequences=True, dropout=params['dropout_rate'], recurrent_dropout=params['recurrent_dropout']),
-        Dropout(params['dropout_rate']),
-        LSTM(params['lstm_units_2'], dropout=params['dropout_rate'], recurrent_dropout=params['recurrent_dropout']),
-        BatchNormalization() if params['use_batch_norm'] else None,
-        Dropout(params['dropout_rate']),
-        Dense(6, activation=params['activation_function'])  # Assuming 6 classes in Y_train
+        LSTM(32, return_sequences=True, input_shape=input_shape),
+        LSTM(32),
+        Reshape((32, 1)),
+        Conv1D(filters=64, kernel_size=5, strides=2, activation='relu'),
+        MaxPooling1D(pool_size=2, strides=2),
+        Conv1D(filters=128, kernel_size=3, activation='relu'),
+        GlobalAveragePooling1D(),
+        BatchNormalization(),
+        Dense(6, activation='softmax')
     ])
+
     optimizer = Adam(learning_rate=params['learning_rate'])
     model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
     return model
@@ -176,19 +182,13 @@ def create_lstm_model(input_shape, params):
 base_lr = 0.001
 base_batch_size = 32
 batch_size = 64
-epoch = 30
+epoch = 15
 params = {
     "epochs": epoch,
     "batch_size": batch_size,
     "learning_rate": base_lr * (batch_size / base_batch_size),
-    "lstm_units_1": 64,
-    "lstm_units_2": 64,
     "dropout_rate": 0.5,
     "use_batch_norm": True,
-    "activation_function": 'softmax',
-    "recurrent_dropout": 0,
-    "optimizer_choice": 'adam',
-    "learning_rate_decay": 0.99
 }
 
 algorithms = ["mdmcgan", "orig_cond_wgan_gp", "cond_wgan_gp"]
@@ -218,16 +218,17 @@ for non_iid_str in ["non_iid"]:
         Y_train_onehot = np.eye(6)[Y_train].astype(int)
         Y_test_onehot = np.eye(6)[Y_test].astype(int)
 
-        # Reshape input data to be 3D [samples, timesteps, features]
-        X_train = X_train.reshape((X_train.shape[0], X_train.shape[1], 1))
-        X_test = X_test.reshape((X_test.shape[0], X_test.shape[1], 1))
+        n_features, n_timesteps = 6, 128
 
-        input_shape = (X_train.shape[1], X_train.shape[2])
+        X_train = X_train.reshape((X_train.shape[0], n_timesteps, n_features))
+        X_test = X_test.reshape((X_test.shape[0], n_timesteps, n_features))
+
+        input_shape = (n_timesteps, n_features)
 
         lstm_model = create_lstm_model(input_shape, params)
 
         # Train the LSTM model
-        early_stopping = EarlyStopping(monitor='val_loss', patience=5)
+        early_stopping = EarlyStopping(monitor='val_loss', patience=3)
         lstm_model.fit(X_train, Y_train_onehot, epochs=params["epochs"], batch_size=params["batch_size"], validation_split=0.2, callbacks=[early_stopping])
 
         predicted_prob = lstm_model.predict(X_test)
@@ -245,28 +246,3 @@ for non_iid_str in ["non_iid"]:
         result_f.flush()
 
 result_f.close()
-
-Y_test_onehot = np.eye(6)[Y_test].astype(int)
-colors = ["blue", "darkorange", "teal"]
-
-for j in range(6):
-    fig = plt.figure(figsize=(8, 8))
-    fig.set_facecolor("white")
-    ax = fig.add_subplot()
-    ax.set_title(f"label {j} vs rest")
-
-    for i, algorithm in enumerate(algorithms):
-        predicted_prob = lstm_model.predict(X_test)
-
-        RocCurveDisplay.from_predictions(
-            Y_test_onehot[:, j],
-            predicted_prob[:, j],
-            name=algorithm,
-            color=colors[i],
-            ax=ax,
-        )
-
-    ax.plot([0, 1], [0, 1], color="red", label="Chance Level")
-    ax.legend()
-
-    plt.savefig(f"plots/label_{j}.png")
