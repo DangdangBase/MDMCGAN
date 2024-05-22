@@ -14,13 +14,22 @@ from train_params import opt
 
 os.makedirs("plots", exist_ok=True)
 debug = False
-datatype = "iid"
+datatype = "non_iid"
 cuda = True
 device = torch.device("cuda" if cuda else "cpu")
 
 iid_labels = 1500
 non_iid_labels = 1500
 ratio = 18
+
+def set_seed(seed):
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+set_seed(42)  # Set your desired seed value
 
 def flatten_features(np_arr):
     np_arr = np.squeeze(np_arr)
@@ -155,8 +164,8 @@ def gen_blended_features(algorithm, non_iid_str):
         gen_x = gen_data
         gen_y = gen_labels
 
-    # X_train = np.concatenate([X_train, gen_x, gen_data], axis=0)
-    # Y_train = np.concatenate([Y_train, gen_y, gen_labels], axis=0)
+    X_train = np.concatenate([X_train, gen_x, gen_data], axis=0)
+    Y_train = np.concatenate([Y_train, gen_y, gen_labels], axis=0)
 
 # For the case of debug
     if debug:
@@ -215,10 +224,10 @@ class LSTMModel(nn.Module):
 
 
 # Hyperparameters
-base_lr = 0.001
+base_lr = 0.0005
 base_batch_size = 32
 batch_size = 64
-epoch = 64
+epoch = 256
 params = {
     "epochs": epoch,
     "batch_size": batch_size,
