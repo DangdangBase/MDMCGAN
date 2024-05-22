@@ -13,7 +13,8 @@ from models.cond_wgan_gp import Generator as cond_wgan_gp_gen
 from train_params import opt
 
 os.makedirs("plots", exist_ok=True)
-debug = True
+debug = False
+datatype = "iid"
 cuda = True
 device = torch.device("cuda" if cuda else "cpu")
 
@@ -31,23 +32,39 @@ def get_generator(algorithm, non_iid):
         cur_generators = []
         for i in range(opt.num_modalities):
             cur_generators.append(cond_wgan_gp_gen(opt))
-            cur_generators[i].load_state_dict(
-                torch.load(
-                    f"generator/{non_iid}_{opt.remove_labels_num}_{opt.filter_ratio}_{algorithm}_{i}",
-                    map_location=torch.device(device),
+            if non_iid == "non_iid":
+                cur_generators[i].load_state_dict(
+                    torch.load(
+                        f"generator/{non_iid}_{opt.remove_labels_num}_{opt.filter_ratio}_{algorithm}_{i}",
+                        map_location=torch.device("cpu"),
+                    )
                 )
-            )
+            else:
+                cur_generators[i].load_state_dict(
+                    torch.load(
+                        f"generator/{non_iid}_{algorithm}_{i}",
+                        map_location=torch.device("cpu"),
+                    )
+                )
         return cur_generators
     else:
         cur_generator = (
             mdmcgan_gen(opt) if algorithm == "mdmcgan" else cond_wgan_gp_gen(opt)
         )
-        cur_generator.load_state_dict(
-            torch.load(
-                f"generator/{non_iid}_{opt.remove_labels_num}_{opt.filter_ratio}_{algorithm}",
-                map_location=torch.device("cpu"),
+        if non_iid == "non_iid":
+                cur_generator.load_state_dict(
+                    torch.load(
+                        f"generator/{non_iid}_{opt.remove_labels_num}_{opt.filter_ratio}_{algorithm}",
+                        map_location=torch.device("cpu"),
+                    )
+                )
+        else:
+            cur_generator.load_state_dict(
+                torch.load(
+                    f"generator/{non_iid}_{algorithm}",
+                    map_location=torch.device("cpu"),
+                )
             )
-        )
         return cur_generator
 
 def gen_fake_features(algorithm, labels):
@@ -201,7 +218,7 @@ class LSTMModel(nn.Module):
 base_lr = 0.001
 base_batch_size = 32
 batch_size = 64
-epoch = 15
+epoch = 64
 params = {
     "epochs": epoch,
     "batch_size": batch_size,
@@ -213,14 +230,20 @@ params = {
 algorithms = ["mdmcgan", "orig_cond_wgan_gp", "cond_wgan_gp"]
 scoring = ["f1_weighted", "accuracy", "f1_macro"]
 
-result_f = open(f"score_{opt.remove_labels_num}_{opt.filter_ratio}_result.csv", "w")
+if not opt.non_iid:
+    datatype = "iid"
+
+if datatype == "iid":
+    result_f = open(f"score_iid_result.csv", "w")
+else:
+    result_f = open(f"score_{opt.remove_labels_num}_{opt.filter_ratio}_result.csv", "w")
 writer = csv.writer(result_f)
 writer.writerow(["algorithm", "f1_weighted", "f1_macro", "accuracy"])
 
 # Placeholder for generators list
 generators = [None, None, None]
 
-for non_iid_str in ["non_iid"]:
+for non_iid_str in [datatype]:
     for i, algorithm in enumerate(algorithms):
         generator = None
 
