@@ -4,17 +4,9 @@ import torch.nn as nn
 import torch.optim as optim
 import os
 import csv
-import tensorflow as tf
 
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout, BatchNormalization, ConvLSTM2D, Flatten, Conv1D, MaxPooling1D, GlobalAveragePooling1D, Reshape
-from tensorflow.keras.callbacks import EarlyStopping
-from tensorflow.keras import mixed_precision
-from tensorflow.keras.optimizers.legacy import Adam
-
-import matplotlib.pyplot as plt
-from sklearn.metrics import f1_score, accuracy_score, roc_auc_score, roc_curve, RocCurveDisplay
-from torch.utils.data import DataLoader, TensorDataset
+from sklearn.metrics import f1_score, accuracy_score
+from torch.utils.data import DataLoader, TensorDataset, random_split
 
 from models.mdmcgan import Generator as mdmcgan_gen
 from models.cond_wgan_gp import Generator as cond_wgan_gp_gen
@@ -22,27 +14,17 @@ from train_params import opt
 
 os.makedirs("plots", exist_ok=True)
 
-mixed_precision.set_global_policy('float32')
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
-
-
-#cuda = torch.cuda.is_available()
-#device = torch.device("cuda" if cuda else "cpu")
-device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-
-#Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
-Tensor = torch.FloatTensor
+cuda = True
+device = torch.device("cuda" if cuda else "cpu")
 
 iid_labels = 1500
 non_iid_labels = 1500
 ratio = 18
 
-
 def flatten_features(np_arr):
     np_arr = np.squeeze(np_arr)
     np_arr = np.concatenate(np.moveaxis(np_arr, 2, 0), axis=1)
     return np_arr
-
 
 def get_generator(algorithm, non_iid):
     if algorithm == "orig_cond_wgan_gp":
@@ -52,10 +34,9 @@ def get_generator(algorithm, non_iid):
             cur_generators[i].load_state_dict(
                 torch.load(
                     f"generator/{non_iid}_{opt.remove_labels_num}_{opt.filter_ratio}_{algorithm}_{i}",
-                    map_location=torch.device("cpu"),
+                    map_location=torch.device(device),
                 )
             )
-
         return cur_generators
     else:
         cur_generator = (
@@ -69,29 +50,35 @@ def get_generator(algorithm, non_iid):
         )
         return cur_generator
 
-
 def gen_fake_features(algorithm, labels):
-    z = Tensor(np.random.normal(0, 1, (len(labels), opt.latent_dim)))
+    z = torch.randn(len(labels), opt.latent_dim, device=device)
+    labels = labels.to(device)  # Ensure labels are on the correct device
 
     with torch.no_grad():
         if algorithm == "mdmcgan":
             modals = []
             for i in range(opt.num_modalities):
-                modals.append(torch.full((len(labels),), i))
+                modals.append(torch.full((len(labels),), i, device=device))
 
             gen_features_list = []
             for cur_modal in modals:
+                # Ensure generator is on the correct device (if not done during loading)
+                generator.to(device)
                 gen_features_list.append(generator(z, labels, cur_modal))
 
             gen_features = torch.cat(gen_features_list, dim=3)
 
         elif algorithm == "cond_wgan_gp":
+            # Ensure generator is on the correct device (if not done during loading)
+            generator.to(device)
             gen_features = generator(z, labels)
             gen_copy = gen_features.clone().detach()
             gen_features = torch.cat([gen_features, gen_copy], dim=3)
         else:
             gen_features_list = []
             for i in range(opt.num_modalities):
+                # Ensure each generator in the list is on the correct device
+                generators[i].to(device)
                 gen_features_list.append(generators[i](z, labels))
             gen_features = torch.cat(gen_features_list, dim=3)
     return gen_features
@@ -121,11 +108,11 @@ def gen_blended_features(algorithm, non_iid_str):
     data.close()
 
     if non_iid_str == "non_iid":
-        gen_acc = gen_fake_features(algorithm, torch.from_numpy(y_remain_gyro))
-        gen_acc = np.split(gen_acc.numpy(), 2, axis=3)[0]
+        gen_acc = gen_fake_features(algorithm, torch.from_numpy(y_remain_gyro).to(device))
+        gen_acc = np.split(gen_acc.cpu().numpy(), 2, axis=3)[0]
 
-        gen_gyro = gen_fake_features(algorithm, torch.from_numpy(y_remain_acc))
-        gen_gyro = np.split(gen_gyro.numpy(), 2, axis=3)[1]
+        gen_gyro = gen_fake_features(algorithm, torch.from_numpy(y_remain_acc).to(device))
+        gen_gyro = np.split(gen_gyro.cpu().numpy(), 2, axis=3)[1]
 
         gen_y = np.concatenate([y_remain_gyro, y_remain_acc], axis=0)
 
@@ -144,8 +131,8 @@ def gen_blended_features(algorithm, non_iid_str):
         for _ in range(non_iid_labels if non_iid_str == "non_iid" else iid_labels)
     ]
 
-    gen_data = gen_fake_features(algorithm, torch.tensor(gen_labels))
-    gen_data = flatten_features(gen_data.numpy())
+    gen_data = gen_fake_features(algorithm, torch.tensor(gen_labels).to(device))
+    gen_data = flatten_features(gen_data.cpu().numpy())
 
     if non_iid_str == "iid":
         gen_x = gen_data
@@ -160,23 +147,50 @@ def gen_blended_features(algorithm, non_iid_str):
 
     return X_train, Y_train, X_test, Y_test
 
-# Function to create LSTM model
-def create_lstm_model(input_shape, params):
-    model = Sequential([
-        LSTM(32, return_sequences=True, input_shape=input_shape),
-        LSTM(32),
-        Reshape((32, 1)),
-        Conv1D(filters=64, kernel_size=5, strides=2, activation='relu'),
-        MaxPooling1D(pool_size=2, strides=2),
-        Conv1D(filters=128, kernel_size=3, activation='relu'),
-        GlobalAveragePooling1D(),
-        BatchNormalization(),
-        Dense(6, activation='softmax')
-    ])
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-    optimizer = Adam(learning_rate=params['learning_rate'])
-    model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
-    return model
+class LSTMModel(nn.Module):
+    def __init__(self):
+        super(LSTMModel, self).__init__()
+        self.lstm1 = nn.LSTM(input_size=6, hidden_size=32, batch_first=True)
+        self.lstm2 = nn.LSTM(input_size=32, hidden_size=32, batch_first=True)
+        self.conv1 = nn.Conv1d(in_channels=32, out_channels=64, kernel_size=5, stride=2)
+        self.pool = nn.MaxPool1d(kernel_size=2, stride=2)
+        self.conv2 = nn.Conv1d(in_channels=64, out_channels=128, kernel_size=3)
+        self.global_avg_pool = nn.AdaptiveAvgPool1d(1)
+        self.batch_norm = nn.BatchNorm1d(128)
+        self.fc = nn.Linear(128, 6)
+        self.softmax = nn.Softmax(dim=1)
+
+    def forward(self, x):
+        # print(f"Input shape: {x.shape}")
+        x, _ = self.lstm1(x)
+        # print(f"After LSTM1: {x.shape}")
+        x, _ = self.lstm2(x)
+        # print(f"After LSTM2: {x.shape}")
+        # Ensure x has three dimensions before permuting
+        if x.ndim != 3:
+            raise RuntimeError("Expected 3 dimensions but got " + str(x.ndim))
+        x = x.permute(0, 2, 1)  # Correct permute call to swap the last two dimensions
+        # print(f"After Permute: {x.shape}")
+        x = self.conv1(x)
+        x = F.relu(x)
+        x = self.pool(x)
+        x = self.conv2(x)
+        x = F.relu(x)
+        x = self.global_avg_pool(x)
+        x = x.squeeze(-1)
+        x = self.batch_norm(x)
+        x = self.fc(x)
+        x = self.softmax(x)
+        # print(f"After Softmax: {x.shape}")
+        return x
+
+
+
+
 
 # Hyperparameters
 base_lr = 0.001
@@ -215,28 +229,69 @@ for non_iid_str in ["non_iid"]:
         X_train, Y_train, X_test, Y_test = gen_blended_features(algorithm, non_iid_str)
 
         # One-hot encode the labels for training the LSTM
-        Y_train_onehot = np.eye(6)[Y_train].astype(int)
-        Y_test_onehot = np.eye(6)[Y_test].astype(int)
+        n_classes = 6  # Adjust this based on the actual number of classes you have
+        Y_train_onehot = torch.eye(n_classes)[torch.tensor(Y_train, dtype=torch.long)].to(device)
+        Y_test_onehot = torch.eye(n_classes)[torch.tensor(Y_test, dtype=torch.long)].to(device)
 
-        n_features, n_timesteps = 6, 128
+        # Define the number of features and timesteps
+        n_features, n_timesteps = 6, 128  # Adjust these based on your data shape and LSTM configuration
 
-        X_train = X_train.reshape((X_train.shape[0], n_timesteps, n_features))
-        X_test = X_test.reshape((X_test.shape[0], n_timesteps, n_features))
+        # Convert NumPy arrays to PyTorch tensors and reshape for LSTM input
+        X_train = torch.tensor(X_train, dtype=torch.float32).reshape(-1, n_timesteps, n_features).to(device)
+        X_test = torch.tensor(X_test, dtype=torch.float32).reshape(-1, n_timesteps, n_features).to(device)
 
+        # Create dataset objects for PyTorch
+        train_dataset = TensorDataset(X_train, Y_train_onehot)
+        test_dataset = TensorDataset(X_test, Y_test_onehot)
+
+        # Splitting the training data into training and validation sets
+        train_size = int(0.8 * len(train_dataset))
+        val_size = len(train_dataset) - train_size
+        train_dataset, val_dataset = random_split(train_dataset, [train_size, val_size])
+
+        # Creating data loaders
+        batch_size = params["batch_size"]  # Ensure params dictionary has 'batch_size' key
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+        test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+        # Define the LSTM model with input shape (might need to define create_lstm_model if not defined)
         input_shape = (n_timesteps, n_features)
+        model = LSTMModel().to(device)
 
-        lstm_model = create_lstm_model(input_shape, params)
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(model.parameters(), lr=params["learning_rate"])
 
-        # Train the LSTM model
-        early_stopping = EarlyStopping(monitor='val_loss', patience=3)
-        lstm_model.fit(X_train, Y_train_onehot, epochs=params["epochs"], batch_size=params["batch_size"], validation_split=0.2, callbacks=[early_stopping])
+        for epoch in range(params["epochs"]):
+            model.train()
+            for X_batch, Y_batch in train_loader:
+                optimizer.zero_grad()
+                output = model(X_batch)
+                loss = criterion(output, Y_batch)
+                loss.backward()
+                optimizer.step()
+            
+            model.eval()
+            val_loss = 0
+            with torch.no_grad():
+                for X_batch, Y_batch in val_loader:
+                    output = model(X_batch)
+                    val_loss += criterion(output, Y_batch).item()
+            val_loss /= len(val_loader)
+            print(f"Epoch {epoch+1}, Validation Loss: {val_loss}")
 
-        predicted_prob = lstm_model.predict(X_test)
-        predicted = np.argmax(predicted_prob, axis=1)
+        model.eval()
+        all_preds = []
+        with torch.no_grad():
+            for X_batch, _ in test_loader:
+                output = model(X_batch)
+                preds = torch.argmax(output, dim=1)
+                all_preds.append(preds.cpu().numpy())
+        all_preds = np.concatenate(all_preds)
 
-        f1_weighted = round(f1_score(Y_test, predicted, average="weighted"), 4)
-        f1_macro = round(f1_score(Y_test, predicted, average="macro"), 4)
-        accuracy = round(accuracy_score(Y_test, predicted), 4)
+        f1_weighted = round(f1_score(Y_test, all_preds, average="weighted"), 4)
+        f1_macro = round(f1_score(Y_test, all_preds, average="macro"), 4)
+        accuracy = round(accuracy_score(Y_test, all_preds), 4)
 
         print(f"{f1_weighted}, {f1_macro}, {accuracy}")
 
