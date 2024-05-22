@@ -13,7 +13,7 @@ from models.cond_wgan_gp import Generator as cond_wgan_gp_gen
 from train_params import opt
 
 os.makedirs("plots", exist_ok=True)
-
+debug = True
 cuda = True
 device = torch.device("cuda" if cuda else "cpu")
 
@@ -138,8 +138,13 @@ def gen_blended_features(algorithm, non_iid_str):
         gen_x = gen_data
         gen_y = gen_labels
 
-    X_train = np.concatenate([X_train, gen_x, gen_data], axis=0)
-    Y_train = np.concatenate([Y_train, gen_y, gen_labels], axis=0)
+    # X_train = np.concatenate([X_train, gen_x, gen_data], axis=0)
+    # Y_train = np.concatenate([Y_train, gen_y, gen_labels], axis=0)
+
+# For the case of debug
+    if debug:
+        X_train = np.concatenate([X_train], axis=0)
+        Y_train = np.concatenate([Y_train], axis=0)
 
     shuffler = np.random.permutation(len(X_train))
     X_train = X_train[shuffler]
